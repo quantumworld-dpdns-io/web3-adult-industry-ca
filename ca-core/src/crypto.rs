@@ -122,14 +122,9 @@ fn base58_encode(data: &[u8]) -> String {
             carry /= 58;
         }
     }
-    digits
-        .iter()
-        .rev()
-        .copied()
-        .collect::<Vec<_>>()
-        .into_iter()
-        .take_while(|&d| d == 0)
-        .for_each(drop);
+    while digits.last() == Some(&0) {
+        digits.pop();
+    }
     let encoded: String = std::iter::repeat('1')
         .take(leading_zeros)
         .chain(

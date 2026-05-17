@@ -2,6 +2,7 @@
 Library    Collections
 Library    Process
 Library    OperatingSystem
+Library    String
 
 *** Variables ***
 ${PROJECT_ROOT}    ${CURDIR}/../..

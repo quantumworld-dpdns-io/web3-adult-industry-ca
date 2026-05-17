@@ -90,17 +90,18 @@ jobs:
       - name: Write and execute ZAP scan script
         run: |
           python3 -c "
-with open('/tmp/zap_scan.py', 'w') as f:
-    f.write('from zapv2 import ZAPv2\n')
-    f.write('import time, json\n')
-    f.write('z = ZAPv2(apikey=\"changeme\", proxy=\"http://localhost:8080\")\n')
-    f.write('z.spider.scan(\"http://localhost:8000\")\n')
-    f.write('time.sleep(5)\n')
-    f.write('z.ascan.scan(\"http://localhost:8000\")\n')
-    f.write('while int(z.ascan.status()) < 100:\n')
-    f.write('    time.sleep(3)\n')
-    f.write('json.dump(z.core.alerts(), open(\"results/zap_report.json\", \"w\"))\n')
-" && python3 /tmp/zap_scan.py
+          with open('/tmp/zap_scan.py', 'w') as f:
+              f.write('from zapv2 import ZAPv2\n')
+              f.write('import time, json\n')
+              f.write('import json\n')
+              f.write('z = ZAPv2(apikey=\"changeme\", proxy=\"http://localhost:8080\")\n')
+              f.write('z.spider.scan(\"http://localhost:8000\")\n')
+              f.write('time.sleep(5)\n')
+              f.write('z.ascan.scan(\"http://localhost:8000\")\n')
+              f.write('while int(z.ascan.status()) < 100:\n')
+              f.write('    time.sleep(3)\n')
+              f.write('json.dump(z.core.alerts(), open(\"results/zap_report.json\", \"w\"))\n')
+          " && python3 /tmp/zap_scan.py
         continue-on-error: true
 
       - name: Upload ZAP report
