@@ -1,0 +1,20 @@
+apiVersion: cilium.io/v1alpha1
+kind: TracingPolicy
+metadata:
+  name: "ca-api-security"
+spec:
+  kprobes:
+  - call: "security_file_permission"
+    syscall: false
+    args:
+    - index: 0
+      type: "file"
+    selectors:
+    - matchPIDs:
+      - operator: In
+        values:
+        - namespace: "ca-system"
+          labels:
+          - key: "app"
+            operator: "Equal"
+            values: ["ca-api"]

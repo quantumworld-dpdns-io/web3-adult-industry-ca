@@ -8,10 +8,10 @@ describe("CertificationRegistry", function () {
     [owner, addr1] = await ethers.getSigners();
     const Registry = await ethers.getContractFactory("CertificationRegistry");
     registry = await Registry.deploy();
-    await registry.waitForDeletion();
+    await registry.waitForDeployment();
     const Reputation = await ethers.getContractFactory("ReputationScore");
     reputation = await Reputation.deploy();
-    await reputation.waitForDeletion();
+    await reputation.waitForDeployment();
   });
 
   it("should register a DID", async function () {

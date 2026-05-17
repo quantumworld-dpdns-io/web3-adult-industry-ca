@@ -6,12 +6,12 @@ async function main() {
 
   const CertificationRegistry = await hre.ethers.getContractFactory("CertificationRegistry");
   const registry = await CertificationRegistry.deploy();
-  await registry.waitForDeletion();
+  await registry.waitForDeployment();
   console.log("CertificationRegistry deployed to:", registry.target);
 
   const ReputationScore = await hre.ethers.getContractFactory("ReputationScore");
   const reputation = await ReputationScore.deploy();
-  await reputation.waitForDeletion();
+  await reputation.waitForDeployment();
   console.log("ReputationScore deployed to:", reputation.target);
 }
 
