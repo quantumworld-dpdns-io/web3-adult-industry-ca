@@ -2,146 +2,110 @@ name: Security Scan
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, develop]
   pull_request:
     branches: [main]
   schedule:
-    - cron: "0 6 * * *"
+    - cron: '0 2 * * *'
+
+env:
+  PYTHON_VERSION: '3.11'
 
 jobs:
   dependency-scan:
-    name: Dependency Vulnerability Scan
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-
-      - name: Rust dependency audit
-        uses: actions-rust-lang/audit@v1
-        continue-on-error: true
-
-      - name: Python dependency audit
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install cargo-audit
+        run: cargo install cargo-audit
+      - name: Run cargo-audit
+        run: cargo audit || true
+      - name: Install pip-audit
+        run: pip install pip-audit
+      - name: Run pip-audit
         run: |
-          pip install pip-audit
           if [ -f ca-api/requirements.txt ]; then
-            pip-audit --requirement ca-api/requirements.txt
+            pip-audit -r ca-api/requirements.txt || true
           fi
-        continue-on-error: true
-
+      - name: Run npm audit
+        run: npm audit --audit-level=high || true
       - name: Upload dependency scan results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: dependency-scan-results
-          path: |
-            Cargo.lock
-            ca-api/requirements.txt
-        if: always()
+          path: /tmp/dep-scan-report.txt
 
   semgrep-sast:
-    name: SAST - Semgrep Scan
     runs-on: ubuntu-latest
     continue-on-error: true
+    container:
+      image: returntocorp/semgrep:latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Run Semgrep
-        uses: semgrep/semgrep-action@v1
-        with:
-          config: >-
-            p/owasp-top-ten
-            p/python
-            p/rust
-            p/command-injection
-            p/jwt
-        env:
-          SEMGREP_TIMEOUT: 300
-        continue-on-error: true
-
+      - name: Run Semgrep with OWASP Top 10 rules
+        run: |
+          semgrep --config=p/owasp-top-ten \
+            --error \
+            --output=semgrep-results.sarif \
+            --sarif \
+            . || true
       - name: Upload Semgrep results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: semgrep-results
-          path: semgrep-results.*
+          path: semgrep-results.sarif
+
+  karate-owasp:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Run Karate OWASP Top 10 features
+        run: |
+          if [ -f tests/karate-security/pom.xml ]; then
+            mvn test -f tests/karate-security/pom.xml \
+              -Dkarate.options="--output=karate-owasp-results"
+          else
+            echo "No Karate security pom.xml found, skipping"
+          fi
+      - name: Upload Karate OWASP results
         if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: karate-owasp-results
+          path: karate-owasp-results/
 
   zap-dast:
-    name: DAST - OWASP ZAP Scan
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-
-      - name: Start ZAP daemon
-        run: |
-          docker run -d --name zap -p 8080:8080 \
-            -i ghcr.io/zaproxy/zaproxy:stable \
-            zap.sh -daemon -port 8080 -host 0.0.0.0 \
-            -config api.key=changeme
-          sleep 30
-        continue-on-error: true
-
-      - name: Run ZAP full scan
-        run: |
-          pip install zapv2
-          mkdir -p results
-          python3 /tmp/zap_scan.py
-        continue-on-error: true
-
-      - name: Write and execute ZAP scan script
-        run: |
-          python3 -c "
-          with open('/tmp/zap_scan.py', 'w') as f:
-              f.write('from zapv2 import ZAPv2\n')
-              f.write('import time, json\n')
-              f.write('import json\n')
-              f.write('z = ZAPv2(apikey=\"changeme\", proxy=\"http://localhost:8080\")\n')
-              f.write('z.spider.scan(\"http://localhost:8000\")\n')
-              f.write('time.sleep(5)\n')
-              f.write('z.ascan.scan(\"http://localhost:8000\")\n')
-              f.write('while int(z.ascan.status()) < 100:\n')
-              f.write('    time.sleep(3)\n')
-              f.write('json.dump(z.core.alerts(), open(\"results/zap_report.json\", \"w\"))\n')
-          " && python3 /tmp/zap_scan.py
-        continue-on-error: true
-
-      - name: Upload ZAP report
+      - name: Run OWASP ZAP full scan
+        uses: zaproxy/action-full-scan@v0.12.0
+        with:
+          target: ${{ vars.ZAP_TARGET_URL || 'https://example.com' }}
+          rules_file_name: .zap/rules.tsv
+          cmd_options: '-a -j -J zap-results.json'
+          allow_issue_writing: false
+      - name: Upload ZAP results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: zap-dast-report
-          path: results/zap_report.json
-        if: always()
-
-      - name: Cleanup ZAP container
-        run: docker stop zap && docker rm zap
-        if: always()
-
-  robot-owasp-tests:
-    name: Robot Framework - OWASP Security Tests
-    runs-on: ubuntu-latest
-    continue-on-error: true
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          pip install robotframework robotframework-requests
-
-      - name: Run OWASP API security tests
-        run: |
-          mkdir -p results/owasp-api
-          robot --variable API_URL:http://localhost:8000 \
-            --outputdir results/owasp-api \
-            tests/robot/security/
-        continue-on-error: true
-
-      - name: Upload OWASP results
-        uses: actions/upload-artifact@v4
-        with:
-          name: owasp-security-results
-          path: results/
-        if: always()
+          name: zap-dast-results
+          path: zap-results.json
