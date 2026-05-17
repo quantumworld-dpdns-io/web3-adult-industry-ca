@@ -44,7 +44,9 @@ cargo build --features pqc
 
 ### Verify Installation
 
-```cargo test --features pqc --test pqc_integration_test```
+```bash
+cargo test --features pqc --test pqc_integration_test
+```
 
 ## Configuration
 

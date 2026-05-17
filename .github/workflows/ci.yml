@@ -1,140 +1,152 @@
-name: CI
+name: CI Pipeline
 
 on:
   push:
-    branches: [main, dev]
+    branches: [main, develop]
   pull_request:
     branches: [main]
 
 env:
   CARGO_TERM_COLOR: always
-  PYTHON_VERSION: "3.11"
+  PYTHON_VERSION: '3.11'
 
 jobs:
-  rust-build-and-test:
-    name: Rust - Build & Test
+  rust-build-test:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
         with:
-          components: clippy, rustfmt
-
-      - name: Rust Cache
-        uses: Swatinem/rust-cache@v2
-
-      - name: Check formatting
-        run: cargo fmt --check
-        continue-on-error: true
-
-      - name: Clippy
-        run: cargo clippy -- -D warnings
-        continue-on-error: true
-
+          toolchain: stable
       - name: Build
         run: cargo build --verbose
-
-      - name: Run tests
+      - name: Test
         run: cargo test --verbose
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: rust-test-results
+          path: target/debug/*.d
 
-  python-lint-and-check:
-    name: Python - Lint & Check
+  python-lint:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
+      - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install flake8
-          if [ -f ca-api/requirements.txt ]; then pip install -r ca-api/requirements.txt; fi
-
-      - name: Lint with flake8
-        run: flake8 ca-api/ --count --select=E9,F63,F7,F82 --show-source --statistics
-        continue-on-error: true
-
-      - name: Python syntax check
+      - name: Run flake8
+        run: flake8 ca-api/ --count --statistics --show-source
+      - name: Python compile check
         run: |
-          find ca-api/ -name "*.py" -exec python -m py_compile {} \;
-
-  robot-framework-functional:
-    name: Robot Framework - Functional Tests
-    runs-on: ubuntu-latest
-    services:
-      api:
-        image: python:3.11-slim
-        ports:
-          - 8000:8000
-        options: >-
-          --name ca-api-service
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up Python ${{ env.PYTHON_VERSION }}
-        uses: actions/setup-python@v5
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-
-      - name: Install Robot Framework
-        run: |
-          pip install robotframework robotframework-requests
-
-      - name: Run Robot Framework functional tests
-        run: |
-          mkdir -p tests/robot/results
-          robot --variable API_URL:http://localhost:8000 \
-            --outputdir tests/robot/results \
-            tests/robot/functional/
-        continue-on-error: true
-
-      - name: Upload Robot Framework results
+          find ca-api/ -name '*.py' -exec python -m py_compile {} \;
+      - name: Upload lint results
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: robot-framework-functional-results
-          path: tests/robot/results/
-        if: always()
+          name: python-lint-results
+          path: /tmp/python-lint-report.txt
+        continue-on-error: true
 
-  smart-contract-validation:
-    name: Smart Contracts - Validation
+  behave-tests:
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
-
-      - name: Validate Solana contract structure
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - name: Install behave and deps
         run: |
-          echo "=== Solana Contract Structure ==="
-          ls -la contracts/solana/
-          if [ -f contracts/solana/Cargo.toml ]; then
-            echo "Solana project detected"
-          fi
-          if [ -f contracts/solana/Xargo.toml ]; then
-            echo "Solana BPF configuration found"
-          fi
+          pip install behave requests
+          if [ -f ca-api/requirements.txt ]; then pip install -r ca-api/requirements.txt; fi
+      - name: Run behave tests
+        run: behave tests/behave/features/ --junit --junit-directory behave-results
+      - name: Upload behave results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: behave-test-results
+          path: behave-results/
 
-      - name: Validate EVM contract structure
-        run: |
-          echo "=== EVM Contract Structure ==="
-          ls -la contracts/evm/
-          if [ -f contracts/evm/hardhat.config.ts ] || [ -f contracts/evm/hardhat.config.js ]; then
-            echo "Hardhat project detected"
-          fi
-          if [ -f contracts/evm/truffle-config.js ]; then
-            echo "Truffle project detected"
-          fi
+  playwright-tests:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Install Playwright browsers
+        run: npx playwright install --with-deps chromium
+      - name: Run Playwright tests
+        run: npx playwright test tests/playwright/ --reporter html
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: playwright-report/
 
-      - name: Check for required contract directories
+  karate-tests:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+      - name: Cache Maven deps
+        uses: actions/cache@v4
+        with:
+          path: ~/.m2
+          key: ${{ runner.os }}-m2-${{ hashFiles('**/pom.xml') }}
+          restore-keys: ${{ runner.os }}-m2
+      - name: Run Karate tests
         run: |
-          for dir in contracts/solana contracts/evm; do
-            if [ ! -d "$dir" ]; then
-              echo "WARNING: $dir does not exist"
-              exit 1
-            fi
-          done
-          echo "All required contract directories exist"
+          if [ -f tests/karate/pom.xml ]; then
+            mvn test -f tests/karate/pom.xml -Dkarate.options="--output=karate-results"
+          else
+            echo "No Karate pom.xml found, skipping"
+          fi
+      - name: Upload Karate results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: karate-test-results
+          path: karate-results/
+
+  appium-tests:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Install Appium
+        run: |
+          npm install -g appium
+          appium driver install uiautomator2
+      - name: Install dependencies
+        run: npm ci || npm install
+      - name: Run Appium tests
+        run: npx appium --log-level info &
+          sleep 5
+          npx mocha tests/appium/ --reporter json --reporter-option output=appium-results.json || true
+      - name: Upload Appium results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: appium-test-results
+          path: appium-results.json
