@@ -1,0 +1,6 @@
+{
+  "name": "ca-karate-tests",
+  "version": "0.1.0",
+  "scripts": { "test": "karate" },
+  "devDependencies": { "karate": "^1.5.0" }
+}
