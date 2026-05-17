@@ -1,9 +1,7 @@
 [programs.localnet]
 ca_solana = "9a9Z1gqWqM5qzgZqqdTKKqQbFJGKsKSawMhHG7FDqLAV"
-
 [provider]
 cluster = "Localnet"
 wallet = "~/.config/solana/id.json"
-
 [scripts]
 test = "anchor test"
