@@ -82,7 +82,8 @@ jobs:
       - name: Run ZAP full scan
         run: |
           pip install zapv2
-          python -c "
+          mkdir -p results
+          python << 'PYEOF'
 from zapv2 import ZAPv2
 import time
 zap = ZAPv2(apikey='changeme', proxy='http://localhost:8080')
@@ -97,7 +98,7 @@ while int(zap.ascan.status()) < 100:
 print('Scan complete')
 with open('results/zap_report.json', 'w') as f:
     f.write(str(zap.core.alerts()))
-" || true
+PYEOF
         continue-on-error: true
 
       - name: Upload ZAP report

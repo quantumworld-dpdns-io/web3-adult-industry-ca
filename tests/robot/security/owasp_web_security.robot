@@ -25,7 +25,7 @@ SQL Injection In Analytics
     Set JWT Auth Header    ${token}
     &{body}=    Create Dictionary    query=SELECT * FROM credential_events; DROP TABLE credential_events; --
     POST    /api/v1/analytics/query    ${body}
-    ${status}=    Run Keyword And Ignore Error    Integer    response status    400
+    Run Keyword And Ignore Error    Integer    response status    400
 
 Path Traversal In DID Resolution
     [Tags]    OWASP    path_traversal    injection
@@ -33,10 +33,11 @@ Path Traversal In DID Resolution
     GET    /api/v1/dids/resolve/../../../etc/passwd
     Integer    response status    404
 
-Set Auth Header
-    ${endpoint}=    Set Variable    /api/v1/dids/resolve/..%2F..%2F..%2Fetc%2Fpasswd
-    GET    ${endpoint}
-    ${status}=    Integer    response status    404
+Path Traversal In DID Resolution Encoded
+    [Tags]    OWASP    path_traversal    injection
+    Set Auth Header
+    GET    /api/v1/dids/resolve/..%2F..%2F..%2Fetc%2Fpasswd
+    Integer    response status    404
 
 Path Traversal In Credential Lookup
     [Tags]    OWASP    path_traversal    injection
