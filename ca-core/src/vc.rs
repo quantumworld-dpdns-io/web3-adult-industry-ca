@@ -199,7 +199,7 @@ mod tests {
     #[test]
     fn test_credential_builder() {
         let kp = crypto::generate_keypair();
-        let did = crypto::public_key_to_did_key(&kp.public);
+        let did = crypto::key_to_did_key(&kp.public);
 
         let credential = CredentialBuilder::new()
             .id("urn:uuid:test-123".to_string())
@@ -220,7 +220,7 @@ mod tests {
     #[test]
     fn test_issue_and_verify_credential() {
         let kp = crypto::generate_keypair();
-        let did = crypto::public_key_to_did_key(&kp.public);
+        let did = crypto::key_to_did_key(&kp.public);
         let vm = format!("{}#{}", did, did.trim_start_matches("did:key:"));
 
         let mut credential = CredentialBuilder::new()
@@ -248,7 +248,7 @@ mod tests {
     #[test]
     fn test_verify_tampered_credential() {
         let kp = crypto::generate_keypair();
-        let did = crypto::public_key_to_did_key(&kp.public);
+        let did = crypto::key_to_did_key(&kp.public);
         let vm = format!("{}#{}", did, did.trim_start_matches("did:key:"));
 
         let mut credential = CredentialBuilder::new()

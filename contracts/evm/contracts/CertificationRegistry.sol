@@ -1,201 +1,132 @@
 // SPDX-License-Identifier: MIT
-pragma solidity ^0.8.24;
+pragma solidity ^0.8.27;
 
+/// @title CertificationRegistry
+/// @notice Manages DID registration and credential anchoring for the adult industry Web3 ecosystem
 contract CertificationRegistry {
-    /// @notice Emitted when a new DID is registered.
-    /// @param did The decentralized identifier
-    /// @param owner The address that registered the DID
-    /// @param documentURI URI pointing to the DID document
-    event DIDRegistered(string indexed did, address indexed owner, string documentURI);
+    address public owner;
+    uint256 private didCount;
 
-    /// @notice Emitted when a DID document URI is updated.
-    /// @param did The decentralized identifier
-    /// @param newDocumentURI The updated URI
-    event DIDUpdated(string indexed did, string newDocumentURI);
-
-    /// @notice Emitted when a DID is deactivated.
-    /// @param did The decentralized identifier being deactivated
-    event DIDDeactivated(string indexed did);
-
-    /// @notice Emitted when a credential is anchored to the registry.
-    /// @param credentialId Unique identifier for the credential
-    /// @param issuerDid The DID of the issuer
-    /// @param subjectDid The DID of the subject
-    /// @param credentialHash The hash of the credential document
-    event CredentialAnchored(
-        string indexed credentialId,
-        string indexed issuerDid,
-        string indexed subjectDid,
-        bytes32 credentialHash
-    );
-
-    /// @notice Emitted when a credential is revoked.
-    /// @param credentialId Unique identifier for the credential
-    /// @param reason Reason for revocation
-    event CredentialRevoked(string indexed credentialId, string reason);
-
-    /// @notice Emitted when a DID is registered or re-activated after deactivation.
-    /// @param did The decentralized identifier
-    event DIDReactivated(string indexed did);
-
-    struct DIDRecord {
+    struct DID {
         string did;
-        address owner;
-        string documentURI;
+        address didOwner;
+        string documentUri;
         bool active;
         uint256 createdAt;
         uint256 updatedAt;
     }
 
-    struct CredentialRecord {
+    struct Credential {
         string credentialId;
         string issuerDid;
         string subjectDid;
-        bytes32 credentialHash;
+        string credentialHash;
         bool revoked;
-        string revocationReason;
         uint256 issuedAt;
     }
 
-    mapping(string => DIDRecord) private _dids;
-    mapping(string => CredentialRecord) private _credentials;
-    string[] private _didList;
+    mapping(string => DID) private dids;
+    mapping(string => Credential) private credentials;
 
-    address public owner;
+    event DIDRegistered(string indexed did, address indexed owner, string documentUri);
+    event DIDUpdated(string indexed did, string documentUri);
+    event DIDDeactivated(string indexed did);
+    event CredentialAnchored(string indexed credentialId, string issuerDid, string subjectDid);
+    event CredentialRevoked(string indexed credentialId);
 
     modifier onlyOwner() {
         require(msg.sender == owner, "Caller is not the owner");
         _;
     }
 
-    modifier onlyDIDOwner(string memory did) {
-        require(_dids[did].owner == msg.sender, "Caller does not own this DID");
+    modifier didExists(string calldata _did) {
+        require(dids[_did].active, "DID does not exist or is inactive");
         _;
     }
 
-    /// @notice Contract constructor sets the contract owner.
     constructor() {
         owner = msg.sender;
     }
 
-    /// @notice Registers a new DID.
-    /// @param did The decentralized identifier to register
-    /// @param documentURI URI of the DID document
-    function registerDID(string memory did, string memory documentURI) external {
-        require(bytes(did).length > 0, "DID cannot be empty");
-        require(bytes(documentURI).length > 0, "Document URI cannot be empty");
-        require(!_dids[did].active, "DID already registered and active");
-
-        DIDRecord storage record = _dids[did];
-        bool isNew = bytes(record.did).length == 0;
-
-        record.did = did;
-        record.owner = msg.sender;
-        record.documentURI = documentURI;
-        record.active = true;
-        record.createdAt = block.timestamp;
-        record.updatedAt = block.timestamp;
-
-        if (isNew) {
-            _didList.push(did);
-            emit DIDRegistered(did, msg.sender, documentURI);
-        } else {
-            emit DIDReactivated(did);
-        }
+    /// @notice Register a new DID
+    /// @param _did The decentralized identifier
+    /// @param _documentUri URI to the DID document
+    function registerDID(string calldata _did, string calldata _documentUri) external {
+        require(!dids[_did].active, "DID already exists and is active");
+        dids[_did] = DID({
+            did: _did,
+            didOwner: msg.sender,
+            documentUri: _documentUri,
+            active: true,
+            createdAt: block.timestamp,
+            updatedAt: block.timestamp
+        });
+        didCount++;
+        emit DIDRegistered(_did, msg.sender, _documentUri);
     }
 
-    /// @notice Updates the DID document URI.
-    /// @param documentURI New URI of the DID document
-    function updateDID(string memory documentURI) external {
-        require(bytes(documentURI).length > 0, "Document URI cannot be empty");
-        require(_dids[msg.sender].active, "No active DID found for caller");
-
-        string memory did = _dids[msg.sender].did;
-        _dids[did].documentURI = documentURI;
-        _dids[did].updatedAt = block.timestamp;
-
-        emit DIDUpdated(did, documentURI);
+    /// @notice Update a DID document URI
+    /// @param _did The DID to update
+    /// @param _documentUri New document URI
+    function updateDID(string calldata _did, string calldata _documentUri) external didExists(_did) {
+        require(dids[_did].didOwner == msg.sender, "Not the DID owner");
+        dids[_did].documentUri = _documentUri;
+        dids[_did].updatedAt = block.timestamp;
+        emit DIDUpdated(_did, _documentUri);
     }
 
-    /// @notice Deactivates the caller's DID.
-    function deactivateDID() external {
-        string memory did = _dids[msg.sender].did;
-        require(_dids[did].active, "DID is not active or does not exist");
-
-        _dids[did].active = false;
-        _dids[did].updatedAt = block.timestamp;
-
-        emit DIDDeactivated(did);
+    /// @notice Deactivate a DID
+    /// @param _did The DID to deactivate
+    function deactivateDID(string calldata _did) external didExists(_did) {
+        require(dids[_did].didOwner == msg.sender, "Not the DID owner");
+        dids[_did].active = false;
+        dids[_did].updatedAt = block.timestamp;
+        emit DIDDeactivated(_did);
     }
 
-    /// @notice Anchors a credential hash on-chain.
-    /// @param credentialId Unique identifier for the credential
-    /// @param issuerDid The DID of the issuer
-    /// @param subjectDid The DID of the subject
-    /// @param credentialHash The hash of the credential
+    /// @notice Anchor a credential on-chain
+    /// @param _credentialId Unique credential identifier
+    /// @param _issuerDid DID of the issuer
+    /// @param _subjectDid DID of the subject
+    /// @param _credentialHash Hash of the credential payload
     function anchorCredential(
-        string memory credentialId,
-        string memory issuerDid,
-        string memory subjectDid,
-        bytes32 credentialHash
-    ) external onlyDIDOwner(issuerDid) {
-        require(bytes(credentialId).length > 0, "Credential ID cannot be empty");
-        require(_dids[issuerDid].active, "Issuer DID is not active");
-        require(
-            bytes(_credentials[credentialId].credentialId).length == 0,
-            "Credential ID already exists"
-        );
-
-        CredentialRecord storage record = _credentials[credentialId];
-        record.credentialId = credentialId;
-        record.issuerDid = issuerDid;
-        record.subjectDid = subjectDid;
-        record.credentialHash = credentialHash;
-        record.revoked = false;
-        record.revocationReason = "";
-        record.issuedAt = block.timestamp;
-
-        emit CredentialAnchored(credentialId, issuerDid, subjectDid, credentialHash);
+        string calldata _credentialId,
+        string calldata _issuerDid,
+        string calldata _subjectDid,
+        string calldata _credentialHash
+    ) external {
+        require(bytes(credentials[_credentialId].credentialId).length == 0, "Credential ID already exists");
+        credentials[_credentialId] = Credential({
+            credentialId: _credentialId,
+            issuerDid: _issuerDid,
+            subjectDid: _subjectDid,
+            credentialHash: _credentialHash,
+            revoked: false,
+            issuedAt: block.timestamp
+        });
+        emit CredentialAnchored(_credentialId, _issuerDid, _subjectDid);
     }
 
-    /// @notice Revokes an existing credential.
-    /// @param credentialId The credential to revoke
-    /// @param reason Reason for revocation
-    function revokeCredential(string memory credentialId, string memory reason) external {
-        CredentialRecord storage record = _credentials[credentialId];
-        require(
-            bytes(record.credentialId).length > 0,
-            "Credential does not exist"
-        );
-        require(
-            _dids[record.issuerDid].owner == msg.sender,
-            "Only the issuer can revoke"
-        );
-        require(!record.revoked, "Credential already revoked");
-
-        record.revoked = true;
-        record.revocationReason = reason;
-
-        emit CredentialRevoked(credentialId, reason);
+    /// @notice Revoke a previously anchored credential
+    /// @param _credentialId The credential to revoke
+    function revokeCredential(string calldata _credentialId) external {
+        require(bytes(credentials[_credentialId].credentialId).length > 0, "Credential not found");
+        require(!credentials[_credentialId].revoked, "Credential already revoked");
+        credentials[_credentialId].revoked = true;
+        emit CredentialRevoked(_credentialId);
     }
 
-    /// @notice Checks if a credential has been revoked.
-    /// @param credentialId The credential to check
-    /// @return true if revoked, false otherwise
-    function isCredentialRevoked(string memory credentialId) external view returns (bool) {
-        return _credentials[credentialId].revoked;
+    /// @notice Check if a credential is revoked
+    /// @param _credentialId The credential to check
+    /// @return True if revoked
+    function isCredentialRevoked(string calldata _credentialId) external view returns (bool) {
+        require(bytes(credentials[_credentialId].credentialId).length > 0, "Credential not found");
+        return credentials[_credentialId].revoked;
     }
 
-    /// @notice Returns the total number of registered DIDs.
-    /// @return The count of registered DIDs
+    /// @notice Get total number of registered DIDs
+    /// @return DID count
     function getDIDCount() external view returns (uint256) {
-        return _didList.length;
-    }
-
-    /// @notice Transfers contract ownership.
-    /// @param newOwner Address of the new owner
-    function transferOwnership(address newOwner) external onlyOwner {
-        require(newOwner != address(0), "New owner cannot be zero address");
-        owner = newOwner;
+        return didCount;
     }
 }

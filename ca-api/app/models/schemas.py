@@ -65,6 +65,13 @@ class DIDCreateResponse(BaseModel):
     did_document: dict = Field(..., description="The DID Document (JSON-LD)")
 
 
+class DIDResolveResponse(BaseModel):
+    did: str = Field(..., description="The resolved DID string")
+    did_document: dict = Field(..., description="The resolved DID Document (JSON-LD)")
+    method: str = Field(..., description="DID method (key or web)")
+    resolved_at: str = Field(..., description="ISO 8601 resolution timestamp")
+
+
 class WebhookCreateRequest(BaseModel):
     url: str = Field(..., description="Webhook callback URL")
     events: list[str] = Field(..., description="List of events to subscribe to")
@@ -77,6 +84,15 @@ class WebhookCreateResponse(BaseModel):
     events: list[str] = Field(..., description="Subscribed events")
     active: bool = Field(..., description="Whether the webhook is active")
     created_at: str = Field(..., description="ISO 8601 creation timestamp")
+
+
+class WebhookListResponse(BaseModel):
+    id: str = Field(..., description="Unique webhook ID")
+    url: str = Field(..., description="Webhook callback URL")
+    events: list[str] = Field(..., description="Subscribed events")
+    active: bool = Field(..., description="Whether the webhook is active")
+    created_at: str = Field(..., description="ISO 8601 creation timestamp")
+    last_triggered_at: Optional[str] = Field(None, description="ISO 8601 timestamp of last delivery")
 
 
 class WebhookUpdateRequest(BaseModel):

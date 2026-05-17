@@ -99,7 +99,7 @@ fn main() {
 
 fn cmd_key_generate() {
     let kp = crypto::generate_keypair();
-    let did_key = crypto::public_key_to_did_key(&kp.public);
+    let did_key = crypto::key_to_did_key(&kp.public);
 
     let output = serde_json::json!({
         "private_key_b64": base64::engine::general_purpose::STANDARD.encode(&kp.private),
