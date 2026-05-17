@@ -1,0 +1,94 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: ca-api-service
+  namespace: ca-system
+  labels:
+    app: ca
+    component: api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: ca
+    component: api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ca-api-lb
+  namespace: ca-system
+  labels:
+    app: ca
+    component: api
+spec:
+  type: LoadBalancer
+  ports:
+    - port: 443
+      targetPort: 8000
+      protocol: TCP
+      name: https
+  selector:
+    app: ca
+    component: api
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ca-dashboard-service
+  namespace: ca-system
+  labels:
+    app: ca
+    component: dashboard
+spec:
+  type: ClusterIP
+  ports:
+    - port: 3000
+      targetPort: 3000
+      protocol: TCP
+      name: http
+  selector:
+    app: ca
+    component: dashboard
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: ca-system
+  labels:
+    app: ca
+    component: redis
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: 6379
+      protocol: TCP
+      name: redis
+  selector:
+    app: ca
+    component: redis
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-service
+  namespace: ca-system
+  labels:
+    app: ca
+    component: postgres
+spec:
+  type: ClusterIP
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+  selector:
+    app: ca
+    component: postgres

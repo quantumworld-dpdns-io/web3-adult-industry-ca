@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ca-api-config
+  namespace: ca-system
+  labels:
+    app: ca
+    component: api
+data:
+  REDIS_URL: "redis://redis-service:6379"
+  DATABASE_URL: "postgresql+asyncpg://ca:ca_password@postgres-service:5432/ca"
+  DUCKDB_PATH: "/data/analytics.duckdb"
+  OTLP_ENDPOINT: "http://otel-collector:4317"
+  JWT_ALGORITHM: "HS256"
+  ACCESS_TOKEN_EXPIRE_MINUTES: "30"
+  CORS_ORIGINS: "https://dashboard.ca.example.com"
+  RATE_LIMIT_PER_MINUTE: "60"
+  API_PORT: "8000"
+  RUST_LOG: "info"
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: ca-dashboard-config
+  namespace: ca-system
+  labels:
+    app: ca
+    component: dashboard
+data:
+  NEXT_PUBLIC_API_URL: "https://api.ca.example.com"
+  NEXT_PUBLIC_API_KEY: ""
