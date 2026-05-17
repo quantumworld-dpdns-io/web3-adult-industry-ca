@@ -1,226 +1,195 @@
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use thiserror::Error;
-
-use crate::crypto;
 
 #[derive(Error, Debug)]
 pub enum DidError {
-    #[error("Invalid DID: {0}")]
+    #[error("Unsupported DID method")]
+    UnsupportedDidMethod,
+    #[error("Unsupported key type")]
+    UnsupportedKeyType,
+    #[error("Invalid DID string: {0}")]
     InvalidDid(String),
-    #[error("Unsupported DID method: {0}")]
-    UnsupportedMethod(String),
-    #[error("HTTP resolution required for did:web: {0}")]
+    #[error("HTTP resolution required: {0}")]
     HttpResolutionRequired(String),
     #[error("Crypto error: {0}")]
-    CryptoError(#[from] crypto::CryptoError),
+    CryptoError(#[from] crate::crypto::CryptoError),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct DidDocument {
     #[serde(rename = "@context")]
-    pub context: Vec<String>,
+    pub context: Value,
     pub id: String,
     #[serde(rename = "verificationMethod")]
     pub verification_method: Vec<VerificationMethod>,
     pub authentication: Vec<String>,
     #[serde(rename = "assertionMethod")]
     pub assertion_method: Vec<String>,
-    #[serde(rename = "capabilityInvocation")]
-    pub capability_invocation: Vec<String>,
-    #[serde(rename = "capabilityDelegation")]
-    pub capability_delegation: Vec<String>,
-    pub service: Vec<Service>,
+    pub service: Option<Vec<Service>>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct VerificationMethod {
     pub id: String,
     #[serde(rename = "type")]
-    pub verification_type: String,
+    pub type_: String,
     pub controller: String,
     #[serde(rename = "publicKeyMultibase")]
     pub public_key_multibase: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Service {
     pub id: String,
     #[serde(rename = "type")]
-    pub service_type: String,
+    pub type_: String,
     #[serde(rename = "serviceEndpoint")]
     pub service_endpoint: String,
 }
 
-impl DidDocument {
-    pub fn to_json(&self) -> Result<String, DidError> {
-        serde_json::to_string_pretty(self)
-            .map_err(|e| DidError::InvalidDid(format!("Serialization error: {}", e)))
-    }
-
-    pub fn from_json(json: &str) -> Result<Self, DidError> {
-        serde_json::from_str(json)
-            .map_err(|e| DidError::InvalidDid(format!("Deserialization error: {}", e)))
-    }
-}
-
 pub fn create_did_key(public_key: &[u8]) -> DidDocument {
-    use base64::Engine;
-    let pub_b64 = base64::engine::general_purpose::STANDARD.encode(public_key);
-    let did = format!("did:key:z{}", pub_b64);
-    let verification_method_id = format!("{}#keys-1", did);
+    let did = crate::crypto::public_key_to_did_key(public_key);
+    let key_fragment = did.trim_start_matches("did:key:");
+    let vm_id = format!("{}#{}", did, key_fragment);
 
     DidDocument {
-        context: vec!["https://www.w3.org/ns/did/v1".to_string()],
+        context: Value::Array(vec![Value::String(
+            "https://www.w3.org/ns/did/v1".to_string(),
+        )]),
         id: did.clone(),
         verification_method: vec![VerificationMethod {
-            id: verification_method_id.clone(),
-            verification_type: "Ed25519VerificationKey2020".to_string(),
+            id: vm_id.clone(),
+            type_: "Ed25519VerificationKey2018".to_string(),
             controller: did.clone(),
-            public_key_multibase: format!("z{}", pub_b64),
+            public_key_multibase: key_fragment.to_string(),
         }],
-        authentication: vec![verification_method_id.clone()],
-        assertion_method: vec![verification_method_id.clone()],
-        capability_invocation: vec![verification_method_id.clone()],
-        capability_delegation: vec![verification_method_id.clone()],
-        service: vec![],
+        authentication: vec![vm_id.clone()],
+        assertion_method: vec![vm_id],
+        service: None,
     }
 }
 
 pub fn create_did_web(domain: &str, path: &str, public_key: &[u8]) -> DidDocument {
-    let did = if path.is_empty() {
+    let did_key = crate::crypto::public_key_to_did_key(public_key);
+    let key_fragment = did_key.trim_start_matches("did:key:");
+
+    let did_web = if path.is_empty() || path == "/" {
         format!("did:web:{}", domain)
     } else {
-        let clean_path = path.trim_start_matches('/');
-        format!(
-            "did:web:{}:{}",
-            domain,
-            clean_path.replace('/', ":")
-        )
+        let path_part = path.trim_start_matches('/').replace('/', ":");
+        format!("did:web:{}:{}", domain, path_part)
     };
 
-    use base64::Engine;
-    let pub_b64 = base64::engine::general_purpose::STANDARD.encode(public_key);
-    let verification_method_id = format!("{}#keys-1", did);
+    let vm_id = format!("{}#{}", did_web, key_fragment);
 
     DidDocument {
-        context: vec!["https://www.w3.org/ns/did/v1".to_string()],
-        id: did.clone(),
+        context: Value::Array(vec![Value::String(
+            "https://www.w3.org/ns/did/v1".to_string(),
+        )]),
+        id: did_web.clone(),
         verification_method: vec![VerificationMethod {
-            id: verification_method_id.clone(),
-            verification_type: "Ed25519VerificationKey2020".to_string(),
-            controller: did.clone(),
-            public_key_multibase: format!("z{}", pub_b64),
+            id: vm_id.clone(),
+            type_: "Ed25519VerificationKey2018".to_string(),
+            controller: did_web.clone(),
+            public_key_multibase: key_fragment.to_string(),
         }],
-        authentication: vec![verification_method_id.clone()],
-        assertion_method: vec![verification_method_id.clone()],
-        capability_invocation: vec![verification_method_id.clone()],
-        capability_delegation: vec![verification_method_id.clone()],
-        service: vec![],
+        authentication: vec![vm_id.clone()],
+        assertion_method: vec![vm_id],
+        service: None,
     }
 }
 
 pub fn resolve_did(did: &str) -> Result<DidDocument, DidError> {
-    if !did.starts_with("did:") {
-        return Err(DidError::InvalidDid(
-            "DID must start with 'did:'".into(),
-        ));
-    }
-
-    let parts: Vec<&str> = did.splitn(3, ':').collect();
-    if parts.len() < 3 {
-        return Err(DidError::InvalidDid("Invalid DID format".into()));
-    }
-
-    let method = parts[1];
-    match method {
-        "key" => {
-            let encoded = did.trim_start_matches("did:key:z");
-            use base64::Engine;
-            let public_key = base64::engine::general_purpose::STANDARD
-                .decode(encoded)
-                .map_err(|e| {
-                    DidError::InvalidDid(format!("Invalid base64 in DID: {}", e))
-                })?;
-            Ok(create_did_key(&public_key))
+    if let Some(encoded) = did.strip_prefix("did:key:") {
+        let multibase = encoded.strip_prefix('z').unwrap_or(encoded);
+        let decoded = crate::crypto::base58_decode(multibase)?;
+        if decoded.len() > 2 && decoded[0] == 0xed && decoded[1] == 0x01 {
+            let public_key = &decoded[2..];
+            Ok(create_did_key(public_key))
+        } else if decoded.len() > 1 && decoded[0] == 0xed {
+            let public_key = &decoded[1..];
+            Ok(create_did_key(public_key))
+        } else {
+            Err(DidError::UnsupportedKeyType)
         }
-        "web" => Err(DidError::HttpResolutionRequired(
-            "did:web requires HTTP resolution to fetch DID document".into(),
-        )),
-        _ => Err(DidError::UnsupportedMethod(method.into())),
+    } else if let Some(_) = did.strip_prefix("did:web:") {
+        Err(DidError::HttpResolutionRequired(did.to_string()))
+    } else {
+        Err(DidError::UnsupportedDidMethod)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::crypto;
 
     #[test]
     fn test_create_did_key() {
-        let kp = crate::crypto::generate_keypair();
-        let doc = create_did_key(&kp.public_key);
+        let kp = crypto::generate_keypair();
+        let doc = create_did_key(&kp.public);
         assert!(doc.id.starts_with("did:key:z"));
         assert_eq!(doc.verification_method.len(), 1);
+        assert_eq!(doc.authentication.len(), 1);
+        assert_eq!(doc.assertion_method.len(), 1);
+        assert!(doc.service.is_none());
         assert_eq!(
-            doc.verification_method[0].verification_type,
-            "Ed25519VerificationKey2020"
+            doc.verification_method[0].type_,
+            "Ed25519VerificationKey2018"
         );
-    }
-
-    #[test]
-    fn test_create_did_web() {
-        let kp = crate::crypto::generate_keypair();
-        let doc = create_did_web("example.com", "/alice", &kp.public_key);
-        assert_eq!(doc.id, "did:web:example.com:alice");
+        assert!(doc.verification_method[0]
+            .public_key_multibase
+            .starts_with('z'));
     }
 
     #[test]
     fn test_create_did_web_root() {
-        let kp = crate::crypto::generate_keypair();
-        let doc = create_did_web("example.com", "", &kp.public_key);
+        let kp = crypto::generate_keypair();
+        let doc = create_did_web("example.com", "", &kp.public);
         assert_eq!(doc.id, "did:web:example.com");
+        assert!(doc.verification_method[0].id.starts_with("did:web:example.com#"));
     }
 
     #[test]
-    fn test_did_json_roundtrip() {
-        let kp = crate::crypto::generate_keypair();
-        let doc = create_did_key(&kp.public_key);
-        let json = doc.to_json().unwrap();
-        let restored = DidDocument::from_json(&json).unwrap();
-        assert_eq!(doc.id, restored.id);
-        assert_eq!(
-            doc.verification_method.len(),
-            restored.verification_method.len()
-        );
+    fn test_create_did_web_with_path() {
+        let kp = crypto::generate_keypair();
+        let doc = create_did_web("example.com", "api/v1", &kp.public);
+        assert_eq!(doc.id, "did:web:example.com:api:v1");
     }
 
     #[test]
     fn test_resolve_did_key() {
-        let kp = crate::crypto::generate_keypair();
-        let doc = create_did_key(&kp.public_key);
+        let kp = crypto::generate_keypair();
+        let doc = create_did_key(&kp.public);
         let resolved = resolve_did(&doc.id).unwrap();
-        assert_eq!(doc.id, resolved.id);
+        assert_eq!(resolved.id, doc.id);
     }
 
     #[test]
-    fn test_resolve_did_web_returns_error() {
+    fn test_resolve_did_web_returns_http_error() {
         let result = resolve_did("did:web:example.com");
         assert!(result.is_err());
-        match result {
-            Err(DidError::HttpResolutionRequired(_)) => {}
-            _ => panic!("Expected HttpResolutionRequired error"),
-        }
+        assert!(matches!(
+            result,
+            Err(DidError::HttpResolutionRequired(_))
+        ));
     }
 
     #[test]
-    fn test_invalid_did() {
-        let result = resolve_did("invalid");
+    fn test_resolve_unsupported_did() {
+        let result = resolve_did("did:unsupported:123");
         assert!(result.is_err());
+        assert!(matches!(result, Err(DidError::UnsupportedDidMethod)));
     }
 
     #[test]
-    fn test_did_with_path_traversal() {
-        let kp = crate::crypto::generate_keypair();
-        let doc = create_did_web("example.com", "/a/b/c", &kp.public_key);
-        assert_eq!(doc.id, "did:web:example.com:a:b:c");
+    fn test_did_document_json() {
+        let kp = crypto::generate_keypair();
+        let doc = create_did_key(&kp.public);
+        let json = serde_json::to_string_pretty(&doc).unwrap();
+        assert!(json.contains("@context"));
+        assert!(json.contains("verificationMethod"));
+        assert!(json.contains("publicKeyMultibase"));
     }
 }
