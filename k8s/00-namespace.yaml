@@ -3,5 +3,6 @@ kind: Namespace
 metadata:
   name: ca-system
   labels:
-    app: ca
+    name: ca-system
     environment: production
+    app.kubernetes.io/part-of: web3-adult-industry-ca

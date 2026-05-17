@@ -10,11 +10,6 @@ processors:
   batch:
     timeout: 1s
     send_batch_size: 1024
-    send_batch_max_size: 2048
-  memory_limiter:
-    check_interval: 1s
-    limit_mib: 512
-    spike_limit_mib: 128
 
 exporters:
   otlp:
@@ -22,19 +17,21 @@ exporters:
     tls:
       insecure: true
   debug:
-    verbosity: detailed
+    verbosity: basic
+  prometheus:
+    endpoint: 0.0.0.0:8889
 
 service:
   pipelines:
     traces:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
+      processors: [batch]
       exporters: [otlp, debug]
     metrics:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
-      exporters: [debug]
+      processors: [batch]
+      exporters: [prometheus, debug]
     logs:
       receivers: [otlp]
-      processors: [memory_limiter, batch]
+      processors: [batch]
       exporters: [debug]
