@@ -1,119 +1,189 @@
+version: "3.9"
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+networks:
+  ca-network:
+    driver: bridge
+
+volumes:
+  postgres-data:
+  redis-data:
+  jaeger-data:
+
 services:
   api:
     build:
       context: .
       dockerfile: Dockerfile.api
+    image: ca-api:latest
+    container_name: ca-api
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     environment:
-      - REDIS_URL=redis://redis:6379
-      - DATABASE_URL=postgresql+asyncpg://ca:ca_password@postgres:5432/ca
-      - DUCKDB_PATH=/data/analytics.duckdb
-      - OTLP_ENDPOINT=http://otel-collector:4317
-      - API_KEY=${API_KEY:-dev-api-key}
-      - JWT_SECRET=${JWT_SECRET:-dev-jwt-secret}
-    volumes:
-      - api-data:/data
+      - DATABASE_URL=postgresql://ca:${DB_PASSWORD:-changeme}@postgres:5432/ca
+      - REDIS_URL=redis://redis:6379/0
+      - OTLP_ENDPOINT=http://otel-collector:4318
     depends_on:
-      redis:
-        condition: service_healthy
       postgres:
         condition: service_healthy
-      otel-collector:
-        condition: service_started
-    restart: unless-stopped
+      redis:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - ca-network
 
   dashboard:
     build:
       context: .
       dockerfile: Dockerfile.dashboard
+    image: ca-dashboard:latest
+    container_name: ca-dashboard
     ports:
       - "3000:3000"
+    env_file:
+      - .env
     environment:
       - NEXT_PUBLIC_API_URL=http://api:8000
     depends_on:
       api:
         condition: service_healthy
-    restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/api/health"]
       interval: 30s
-      timeout: 10s
+      timeout: 5s
       retries: 3
-      start_period: 10s
+      start_period: 15s
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - ca-network
 
   redis:
     image: redis:7-alpine
+    container_name: ca-redis
     ports:
       - "6379:6379"
     volumes:
       - redis-data:/data
-    restart: unless-stopped
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
-      timeout: 5s
-      retries: 3
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - ca-network
 
   postgres:
     image: postgres:16-alpine
-    environment:
-      - POSTGRES_USER=ca
-      - POSTGRES_PASSWORD=ca_password
-      - POSTGRES_DB=ca
+    container_name: ca-postgres
     ports:
       - "5432:5432"
+    environment:
+      - POSTGRES_USER=ca
+      - POSTGRES_PASSWORD=${DB_PASSWORD:-changeme}
+      - POSTGRES_DB=ca
     volumes:
       - postgres-data:/var/lib/postgresql/data
-    restart: unless-stopped
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ca -d ca"]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - ca-network
 
   otel-collector:
-    image: otel/opentelemetry-collector-contrib:0.108.0
-    command: ["--config=/etc/otel-collector-config.yaml"]
-    volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    image: otel/opentelemetry-collector-contrib:latest
+    container_name: ca-otel-collector
     ports:
       - "4317:4317"
       - "4318:4318"
-    depends_on:
-      - jaeger
-    restart: unless-stopped
-
-  jaeger:
-    image: jaegertracing/all-in-one:1.60
-    ports:
-      - "16686:16686"
-      - "14250:14250"
-    environment:
-      - COLLECTOR_OTLP_ENABLED=true
-    restart: unless-stopped
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command: ["--config=/etc/otel-collector-config.yaml"]
     healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:16686/"]
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:13133"]
       interval: 30s
       timeout: 5s
       retries: 3
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - ca-network
+
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: ca-jaeger
+    ports:
+      - "16686:16686"
+      - "14250:14250"
+      - "14269:14269"
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - LOG_LEVEL=info
+    volumes:
+      - jaeger-data:/tmp
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:16686"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - ca-network
 
   zap:
-    image: ghcr.io/zaproxy/zaproxy:stable
-    command: zap.sh -daemon -port 8080 -host 0.0.0.0 -config api.key=changeme
-    ports:
-      - "8080:8080"
+    image: softwaresecurityproject/zap-stable:latest
+    container_name: ca-zap
     profiles:
       - security-scan
+    ports:
+      - "8080:8080"
+    command: ["zap.sh", "-daemon", "-host", "0.0.0.0", "-port", "8080", "-config", "api.addrs.addr.name=.*", "-config", "api.addrs.addr.regex=true"]
+    healthcheck:
+      test: ["CMD", "zap-cli", "status"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
     restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - ca-network
 
-volumes:
-  redis-data:
-  postgres-data:
-  api-data:
+  nessie:
+    image: projectnessie/nessie:latest
+    container_name: ca-nessie
+    profiles:
+      - iceberg
+    ports:
+      - "19120:19120"
+    environment:
+      - NESSIE_VERSION_STORE_TYPE=IN_MEMORY
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:19120/api/v1/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    restart: unless-stopped
+    logging: *default-logging
+    networks:
+      - ca-network
