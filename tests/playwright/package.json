@@ -1,0 +1,9 @@
+{
+  "name": "ca-playwright-tests",
+  "version": "0.1.0",
+  "scripts": { "test": "playwright test", "report": "playwright show-report" },
+  "devDependencies": {
+    "@playwright/test": "^1.47.0",
+    "typescript": "^5.5.0"
+  }
+}

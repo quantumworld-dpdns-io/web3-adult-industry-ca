@@ -1,0 +1,3 @@
+[workspace]
+members = ["ca-core", "ca-cli"]
+resolver = "2"

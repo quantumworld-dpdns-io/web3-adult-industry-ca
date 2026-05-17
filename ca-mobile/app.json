@@ -1,0 +1,15 @@
+{
+  "expo": {
+    "name": "CA Mobile",
+    "slug": "ca-mobile",
+    "scheme": "ca-mobile",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": { "backgroundColor": "#0a0a1a" },
+    "ios": { "supportsTablet": true, "bundleIdentifier": "com.ca.mobile" },
+    "android": { "adaptiveIcon": { "backgroundColor": "#0a0a1a" }, "package": "com.ca.mobile" },
+    "plugins": [["expo-camera", { "cameraPermission": "Allow CA Mobile to access your camera for scanning QR codes." }]]
+  }
+}

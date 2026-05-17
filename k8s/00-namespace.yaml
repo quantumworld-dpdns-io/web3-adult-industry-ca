@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: ca-system
+  labels:
+    name: ca-system
+    environment: production
+    app.kubernetes.io/part-of: web3-adult-industry-ca
