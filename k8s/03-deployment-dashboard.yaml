@@ -35,6 +35,14 @@ spec:
           envFrom:
             - configMapRef:
                 name: ca-dashboard-config
+            - secretRef:
+                name: ca-secrets
+          env:
+            - name: NEXT_PUBLIC_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: ca-secrets
+                  key: NEXT_PUBLIC_API_KEY
           resources:
             requests:
               memory: "128Mi"

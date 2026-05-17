@@ -14,42 +14,48 @@ Issue Verified Adult Creator Credential
     ${did_response}=    Create DID    key    ${pub_key}
     ${issuer_did}=    Output    response body did
     ${claims}=    Create Dictionary    name=Test Creator    platform=OnlyFans    verified_since=2024-01-01
-    POST Credential Issue    ${issuer_did}    did:key:z6Mktest    verified_adult_creator    ${claims}
+    Issue Credential    ${issuer_did}    did:key:z6Mktest    verified_adult_creator    ${claims}
     String    response body credential.credentialSubject.name    Test Creator
+    String    response body credential.type[0]    VerifiableCredential
 
 Issue Licensed Venue Credential
     ${pub_key}=    Generate Test Keypair
     ${did_response}=    Create DID    key    ${pub_key}
+    ${issuer_did}=    Output    response body did
     ${claims}=    Create Dictionary    venue_name=Test Club    address=123 Main St    license_number=LIC-2024-001    jurisdiction=California
-    POST Credential Issue    did:key:z6Mkissuer    did:key:z6Mkvenue    licensed_venue    ${claims}
+    Issue Credential    ${issuer_did}    did:key:z6Mkvenue    licensed_venue    ${claims}
     String    response body credential.credentialSubject.venue_name    Test Club
+    String    response body credential.credentialSubject.jurisdiction    California
 
-Verify Valid Credential
+Verify Valid Credential Returns True
     ${pub_key}=    Generate Test Keypair
     ${did_response}=    Create DID    key    ${pub_key}
+    ${issuer_did}=    Output    response body did
     ${claims}=    Create Dictionary    name=Test Creator    platform=OnlyFans
-    POST Credential Issue    did:key:z6Mkissuer    did:key:z6Mksubject    verified_adult_creator    ${claims}
+    Issue Credential    ${issuer_did}    did:key:z6Mksubject    verified_adult_creator    ${claims}
     ${cred}=    Output    response body credential
-    POST Credential Verify    ${cred}
+    Verify Credential    ${cred}
     Boolean    response body valid    True
 
-Revoke Credential
+Revoke Credential Succeeds
     ${pub_key}=    Generate Test Keypair
     ${did_response}=    Create DID    key    ${pub_key}
+    ${issuer_did}=    Output    response body did
     ${claims}=    Create Dictionary    name=Test Creator
-    POST Credential Issue    did:key:z6Mkissuer    did:key:z6Mksubject    verified_adult_creator    ${claims}
+    Issue Credential    ${issuer_did}    did:key:z6Mksubject    verified_adult_creator    ${claims}
     ${cred_id}=    Output    response body credential.id
-    POST Credential Revoke    ${cred_id}
-    Integer    response status    200
+    Revoke Credential    ${cred_id}
+    Boolean    response body success    True
+    String    response body credential_id    ${cred_id}
 
-Verify Revoked Credential Fails
-    [Setup]    Set Auth Header
+Verify Revoked Credential Returns False
     ${pub_key}=    Generate Test Keypair
     ${did_response}=    Create DID    key    ${pub_key}
+    ${issuer_did}=    Output    response body did
     ${claims}=    Create Dictionary    name=Test Creator
-    POST Credential Issue    did:key:z6Mkissuer    did:key:z6Mksubject    verified_adult_creator    ${claims}
+    Issue Credential    ${issuer_did}    did:key:z6Mksubject    verified_adult_creator    ${claims}
     ${cred}=    Output    response body credential
     ${cred_id}=    Set Variable    ${cred}[id]
-    POST Credential Revoke    ${cred_id}
-    POST Credential Verify    ${cred}
+    Revoke Credential    ${cred_id}
+    Verify Credential    ${cred}
     Boolean    response body valid    False

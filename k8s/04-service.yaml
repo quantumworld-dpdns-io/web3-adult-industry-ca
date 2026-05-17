@@ -20,25 +20,6 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: ca-api-lb
-  namespace: ca-system
-  labels:
-    app: ca
-    component: api
-spec:
-  type: LoadBalancer
-  ports:
-    - port: 443
-      targetPort: 8000
-      protocol: TCP
-      name: https
-  selector:
-    app: ca
-    component: api
----
-apiVersion: v1
-kind: Service
-metadata:
   name: ca-dashboard-service
   namespace: ca-system
   labels:

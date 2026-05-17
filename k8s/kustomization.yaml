@@ -1,0 +1,25 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: ca-system
+
+resources:
+  - 00-namespace.yaml
+  - 01-configmap.yaml
+  - 02-secret.yaml
+  - 03-deployment-api.yaml
+  - 03-deployment-dashboard.yaml
+  - 04-service.yaml
+  - 05-ingress.yaml
+  - 06-hpa.yaml
+  - 07-network-policy.yaml
+
+commonLabels:
+  app: ca
+  managed-by: kustomize
+
+images:
+  - name: ghcr.io/web3-adult-industry-ca/ca-api
+    newTag: latest
+  - name: ghcr.io/web3-adult-industry-ca/ca-dashboard
+    newTag: latest

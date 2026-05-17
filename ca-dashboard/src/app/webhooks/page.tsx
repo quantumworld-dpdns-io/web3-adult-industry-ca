@@ -1,259 +1,203 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { getWebhooks, createWebhook, deleteWebhook, testWebhook } from "@/lib/api"
-import type { Webhook } from "@/lib/types"
-import { RefreshCw, Plus, Trash2, Play, X, Loader2 } from "lucide-react"
-import { toast } from "sonner"
+import { useEffect, useState, useCallback } from "react";
+import { getWebhooks, createWebhook, deleteWebhook } from "@/lib/api";
+import type { WebhookConfig } from "@/lib/types";
+import { Plus, RefreshCw, Trash2, X } from "lucide-react";
+import { toast } from "sonner";
 
 const availableEvents = [
   "credential.issued",
   "credential.revoked",
-  "credential.expired",
+  "credential.verified",
   "did.created",
   "did.deactivated",
-  "verification.completed",
-  "reputation.updated",
-]
+];
 
 export default function WebhooksPage() {
-  const [webhooks, setWebhooks] = useState<Webhook[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
-  const [showCreate, setShowCreate] = useState(false)
-  const [newUrl, setNewUrl] = useState("")
-  const [newEvents, setNewEvents] = useState<string[]>([])
-  const [creating, setCreating] = useState(false)
-  const [testingId, setTestingId] = useState<string | null>(null)
+  const [webhooks, setWebhooks] = useState<WebhookConfig[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [url, setUrl] = useState("");
+  const [selectedEvents, setSelectedEvents] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
-  const fetchWebhooks = async () => {
-    setLoading(true)
-    setError(null)
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError("");
     try {
-      const res = await getWebhooks()
-      if (res.data) setWebhooks(res.data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to load webhooks")
+      const data = await getWebhooks();
+      setWebhooks(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load webhooks");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  }, []);
 
   useEffect(() => {
-    fetchWebhooks()
-  }, [])
+    fetchData();
+  }, [fetchData]);
 
-  const toggleEvent = (event: string) => {
-    setNewEvents((prev) =>
-      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event]
-    )
-  }
-
-  const handleCreate = async () => {
-    if (!newUrl.trim() || newEvents.length === 0) {
-      toast.error("URL and at least one event required")
-      return
+  const handleCreate = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!url || selectedEvents.length === 0) {
+      toast.error("URL and at least one event required");
+      return;
     }
-    setCreating(true)
+    setSubmitting(true);
     try {
-      await createWebhook({ url: newUrl, events: newEvents })
-      toast.success("Webhook created")
-      setShowCreate(false)
-      setNewUrl("")
-      setNewEvents([])
-      fetchWebhooks()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create webhook")
+      await createWebhook(url, selectedEvents);
+      toast.success("Webhook created");
+      setShowForm(false);
+      setUrl("");
+      setSelectedEvents([]);
+      fetchData();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to create webhook");
     } finally {
-      setCreating(false)
+      setSubmitting(false);
     }
-  }
+  };
 
   const handleDelete = async (id: string) => {
     try {
-      await deleteWebhook(id)
-      toast.success("Webhook deleted")
-      fetchWebhooks()
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to delete webhook")
+      await deleteWebhook(id);
+      toast.success("Webhook deleted");
+      fetchData();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Failed to delete webhook");
     }
-  }
+  };
 
-  const handleTest = async (id: string) => {
-    setTestingId(id)
-    try {
-      const res = await testWebhook(id)
-      toast.success(`Test sent - status: ${res.data?.status ?? "unknown"}`)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Test failed")
-    } finally {
-      setTestingId(null)
-    }
-  }
+  const toggleEvent = (event: string) => {
+    setSelectedEvents((prev) =>
+      prev.includes(event) ? prev.filter((e) => e !== event) : [...prev, event]
+    );
+  };
 
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Webhooks</h1>
-          <p className="text-muted-foreground">
-            Configure webhook notifications
-          </p>
+          <h1 className="text-3xl font-bold">Webhooks</h1>
+          <p className="mt-1 text-muted-foreground">Manage webhook endpoints for event notifications</p>
         </div>
-        <div className="flex gap-3">
-          <button
-            onClick={fetchWebhooks}
-            disabled={loading}
-            className="inline-flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm font-medium hover:bg-accent disabled:opacity-50"
-          >
-            <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
-            Refresh
-          </button>
-          <button
-            onClick={() => setShowCreate(true)}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
-          >
-            <Plus className="h-4 w-4" />
-            Add Webhook
-          </button>
-        </div>
+        <button
+          onClick={() => setShowForm(true)}
+          className="flex items-center gap-2 rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90"
+        >
+          <Plus className="h-4 w-4" />
+          Add Webhook
+        </button>
       </div>
 
-      {error && !loading ? (
-        <div className="flex flex-col items-center gap-4 py-12">
-          <p className="text-destructive">{error}</p>
-          <button
-            onClick={fetchWebhooks}
-            className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-          >
-            <RefreshCw className="h-4 w-4" />
-            Retry
-          </button>
-        </div>
-      ) : loading ? (
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-24 animate-pulse rounded-lg border bg-card" />
-          ))}
-        </div>
-      ) : webhooks.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-lg border bg-card py-12 text-center">
-          <p className="text-sm text-muted-foreground">
-            No webhooks configured. Add a webhook to receive event notifications.
-          </p>
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {webhooks.map((wh) => (
-            <div
-              key={wh.id}
-              className="rounded-lg border bg-card p-4"
-            >
-              <div className="flex items-start justify-between">
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium break-all">{wh.url}</p>
-                  <div className="mt-1 flex flex-wrap gap-1">
-                    {wh.events.map((ev) => (
-                      <span
-                        key={ev}
-                        className="inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs text-primary"
-                      >
-                        {ev}
-                      </span>
-                    ))}
-                  </div>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    Created: {new Date(wh.created_at).toLocaleDateString()}
-                    {" · "}
-                    {wh.is_active ? "Active" : "Inactive"}
-                  </p>
-                </div>
-                <div className="ml-4 flex gap-2">
-                  <button
-                    onClick={() => handleTest(wh.id)}
-                    disabled={testingId === wh.id}
-                    className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs font-medium hover:bg-accent"
-                  >
-                    {testingId === wh.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Play className="h-3 w-3" />
-                    )}
-                    Test
-                  </button>
-                  <button
-                    onClick={() => handleDelete(wh.id)}
-                    className="inline-flex items-center gap-1 rounded-md border bg-background px-2 py-1 text-xs font-medium text-destructive hover:bg-destructive/10"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                    Delete
-                  </button>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {showCreate && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="w-full max-w-lg rounded-lg border bg-card p-6 shadow-lg">
-            <div className="mb-4 flex items-center justify-between">
+      {showForm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6">
+            <div className="flex items-center justify-between mb-4">
               <h2 className="text-lg font-semibold">Create Webhook</h2>
-              <button onClick={() => setShowCreate(false)}>
-                <X className="h-5 w-5 text-muted-foreground hover:text-foreground" />
+              <button onClick={() => setShowForm(false)} className="text-muted-foreground hover:text-foreground">
+                <X className="h-5 w-5" />
               </button>
             </div>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Webhook URL</label>
+            <form onSubmit={handleCreate} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium mb-1">Webhook URL</label>
                 <input
-                  type="url"
-                  value={newUrl}
-                  onChange={(e) => setNewUrl(e.target.value)}
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
                   placeholder="https://example.com/webhook"
-                  className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
+                  required
                 />
               </div>
-              <div className="space-y-2">
-                <label className="text-sm font-medium">Events</label>
-                <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="block text-sm font-medium mb-2">Events</label>
+                <div className="space-y-2">
                   {availableEvents.map((event) => (
-                    <label
-                      key={event}
-                      className="flex items-center gap-2 rounded-md border bg-background px-3 py-2 text-sm cursor-pointer hover:bg-accent"
-                    >
+                    <label key={event} className="flex items-center gap-2 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={newEvents.includes(event)}
+                        checked={selectedEvents.includes(event)}
                         onChange={() => toggleEvent(event)}
-                        className="text-primary"
+                        className="rounded border-border bg-background"
                       />
-                      {event}
+                      <span className="text-sm">{event}</span>
                     </label>
                   ))}
                 </div>
               </div>
-              <div className="flex justify-end gap-3 pt-2">
+              <div className="flex justify-end gap-3">
                 <button
-                  onClick={() => setShowCreate(false)}
-                  className="rounded-md border bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
+                  type="button"
+                  onClick={() => setShowForm(false)}
+                  className="rounded border border-border px-4 py-2 text-sm hover:bg-secondary"
                 >
                   Cancel
                 </button>
                 <button
-                  onClick={handleCreate}
-                  disabled={creating}
-                  className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
+                  type="submit"
+                  disabled={submitting}
+                  className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
                 >
-                  {creating && <Loader2 className="h-4 w-4 animate-spin" />}
-                  {creating ? "Creating..." : "Create"}
+                  {submitting ? "Creating..." : "Create Webhook"}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}
+
+      <div className="flex items-center justify-between">
+        <h2 className="text-xl font-semibold">All Webhooks</h2>
+        <button onClick={fetchData} className="rounded border border-border p-2 hover:bg-secondary">
+          <RefreshCw className="h-4 w-4" />
+        </button>
+      </div>
+
+      {loading ? (
+        <div className="flex h-64 items-center justify-center text-muted-foreground">Loading webhooks...</div>
+      ) : error ? (
+        <div className="flex h-64 items-center justify-center text-red-400">Error: {error}</div>
+      ) : webhooks.length === 0 ? (
+        <div className="flex h-64 items-center justify-center text-muted-foreground">
+          No webhooks configured. Click &quot;Add Webhook&quot; to create one.
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {webhooks.map((wh) => (
+            <div key={wh.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-3">
+                  <span
+                    className={`h-2 w-2 rounded-full ${wh.active ? "bg-green-400" : "bg-red-400"}`}
+                  />
+                  <p className="font-medium">{wh.url}</p>
+                </div>
+                <div className="mt-1 flex flex-wrap gap-2">
+                  {wh.events.map((event) => (
+                    <span key={event} className="rounded bg-secondary px-2 py-0.5 text-xs">
+                      {event}
+                    </span>
+                  ))}
+                </div>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  Created {new Date(wh.created_at).toLocaleDateString()}
+                  {wh.last_triggered && ` · Last triggered ${new Date(wh.last_triggered).toLocaleDateString()}`}
+                </p>
+              </div>
+              <button
+                onClick={() => handleDelete(wh.id)}
+                className="rounded p-2 text-muted-foreground hover:text-red-400"
+              >
+                <Trash2 className="h-4 w-4" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
-  )
+  );
 }

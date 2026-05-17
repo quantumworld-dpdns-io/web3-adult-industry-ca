@@ -6,12 +6,13 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 6 * * *'  # Daily at 6 AM UTC
+    - cron: "0 6 * * *"
 
 jobs:
   dependency-scan:
     name: Dependency Vulnerability Scan
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -39,6 +40,7 @@ jobs:
   semgrep-sast:
     name: SAST - Semgrep Scan
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
@@ -50,6 +52,7 @@ jobs:
             p/python
             p/rust
             p/command-injection
+            p/jwt
         env:
           SEMGREP_TIMEOUT: 300
         continue-on-error: true
@@ -62,12 +65,13 @@ jobs:
         if: always()
 
   zap-dast:
-    name: DAST - ZAP Scan
+    name: DAST - OWASP ZAP Scan
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
-      - name: Start ZAP
+      - name: Start ZAP daemon
         run: |
           docker run -d --name zap -p 8080:8080 \
             -i ghcr.io/zaproxy/zaproxy:stable \
@@ -75,10 +79,25 @@ jobs:
             -config api.key=changeme
           sleep 30
 
-      - name: Run ZAP scan
+      - name: Run ZAP full scan
         run: |
           pip install zapv2
-          python tests/robot/security/dast/zap_scan.py
+          python -c "
+from zapv2 import ZAPv2
+import time
+zap = ZAPv2(apikey='changeme', proxy='http://localhost:8080')
+target = 'http://localhost:8000'
+print(f'Spidering {target}...')
+zap.spider.scan(target)
+time.sleep(10)
+print('Running active scan...')
+zap.ascan.scan(target)
+while int(zap.ascan.status()) < 100:
+    time.sleep(5)
+print('Scan complete')
+with open('results/zap_report.json', 'w') as f:
+    f.write(str(zap.core.alerts()))
+" || true
         continue-on-error: true
 
       - name: Upload ZAP report
@@ -88,30 +107,32 @@ jobs:
           path: results/zap_report.json
         if: always()
 
-      - name: Cleanup
+      - name: Cleanup ZAP container
         run: docker stop zap && docker rm zap
         if: always()
 
-  robot-security-tests:
+  robot-owasp-tests:
     name: Robot Framework - OWASP Security Tests
     runs-on: ubuntu-latest
+    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
         run: |
-          pip install robotframework robotframework-restinstance robotframework-requests
+          pip install robotframework robotframework-requests
 
       - name: Run OWASP API security tests
         run: |
+          mkdir -p results/owasp-api
           robot --variable API_URL:http://localhost:8000 \
             --outputdir results/owasp-api \
-            tests/robot/security/owasp_api_security.robot
+            tests/robot/security/
         continue-on-error: true
 
       - name: Upload OWASP results

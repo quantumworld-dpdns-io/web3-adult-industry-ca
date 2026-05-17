@@ -1,7 +1,8 @@
-"use client"
+"use client";
 
-import { useEffect, useState } from "react"
-import { runAnalyticsQuery, getPredefinedQueries } from "@/lib/api"
+import { useEffect, useState, useCallback } from "react";
+import { getAnalytics } from "@/lib/api";
+import type { AnalyticsResult } from "@/lib/types";
 import {
   BarChart,
   Bar,
@@ -10,202 +11,157 @@ import {
   CartesianGrid,
   Tooltip,
   ResponsiveContainer,
-} from "recharts"
-import { Loader2, Play, RefreshCw } from "lucide-react"
-import { toast } from "sonner"
+  PieChart,
+  Pie,
+  Cell,
+} from "recharts";
+
+const reports = [
+  { value: "credentials_by_type", label: "Credentials by Type" },
+  { value: "credentials_by_status", label: "Credentials by Status" },
+  { value: "dids_by_method", label: "DIDs by Method" },
+  { value: "issuance_trend", label: "Issuance Trend (30 days)" },
+  { value: "verification_trend", label: "Verification Trend (30 days)" },
+];
+
+const COLORS = ["#60a5fa", "#34d399", "#f472b6", "#fbbf24", "#a78bfa", "#fb923c"];
 
 export default function AnalyticsPage() {
-  const [sql, setSql] = useState("")
-  const [results, setResults] = useState<Record<string, unknown>[] | null>(null)
-  const [running, setRunning] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [predefined, setPredefined] = useState<
-    { name: string; sql: string; description: string }[]
-  >([])
-  const [selectedQuery, setSelectedQuery] = useState("")
+  const [selectedReport, setSelectedReport] = useState(reports[0].value);
+  const [data, setData] = useState<AnalyticsResult | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+
+  const fetchData = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const result = await getAnalytics(selectedReport);
+      setData(result);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load analytics");
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedReport]);
 
   useEffect(() => {
-    getPredefinedQueries()
-      .then((res) => {
-        if (res.data) setPredefined(res.data)
-      })
-      .catch(() => {})
-  }, [])
+    fetchData();
+  }, [fetchData]);
 
-  const handleRunQuery = async (querySql?: string) => {
-    const q = querySql ?? sql
-    if (!q.trim()) {
-      toast.error("Please enter a SQL query")
-      return
-    }
-    setRunning(true)
-    setError(null)
-    setResults(null)
-    try {
-      const res = await runAnalyticsQuery(q)
-      if (res.data !== undefined) setResults(res.data)
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Query failed")
-    } finally {
-      setRunning(false)
-    }
-  }
+  const chartData = data
+    ? data.labels.map((label, i) => ({
+        name: label,
+        value: data.values[i] || 0,
+      }))
+    : [];
 
-  const selectPredefined = (querySql: string) => {
-    setSql(querySql)
-    setSelectedQuery(querySql)
-    setResults(null)
-    setError(null)
-  }
+  const isPie = ["credentials_by_type", "credentials_by_status", "dids_by_method"].includes(selectedReport);
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold tracking-tight">Analytics</h1>
-          <p className="text-muted-foreground">
-            Query and visualize credential data
-          </p>
-        </div>
+      <div>
+        <h1 className="text-3xl font-bold">Analytics</h1>
+        <p className="mt-1 text-muted-foreground">Explore usage and performance metrics</p>
       </div>
 
-      <div className="grid gap-6 lg:grid-cols-3">
-        <div className="lg:col-span-1">
-          <div className="rounded-lg border bg-card p-4">
-            <h3 className="mb-3 text-sm font-medium">Pre-defined Reports</h3>
-            <div className="space-y-2">
-              {predefined.map((q) => (
-                <button
-                  key={q.name}
-                  onClick={() => selectPredefined(q.sql)}
-                  className={`w-full rounded-md border p-3 text-left text-sm transition-colors hover:bg-accent ${
-                    selectedQuery === q.sql ? "border-primary bg-primary/5" : ""
-                  }`}
-                >
-                  <p className="font-medium">{q.name}</p>
-                  <p className="text-xs text-muted-foreground">{q.description}</p>
-                </button>
-              ))}
-              {predefined.length === 0 && (
-                <p className="text-xs text-muted-foreground py-4 text-center">
-                  No predefined queries available from the server yet.
-                </p>
-              )}
-            </div>
-          </div>
+      <div className="flex gap-4">
+        <select
+          value={selectedReport}
+          onChange={(e) => setSelectedReport(e.target.value)}
+          className="rounded border border-input bg-background px-3 py-2 text-sm"
+        >
+          {reports.map((r) => (
+            <option key={r.value} value={r.value}>
+              {r.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
+      {loading ? (
+        <div className="flex h-96 items-center justify-center text-muted-foreground">
+          Loading analytics...
         </div>
-
-        <div className="lg:col-span-2 space-y-6">
-          <div className="rounded-lg border bg-card p-4">
-            <h3 className="mb-3 text-sm font-medium">SQL Query Editor</h3>
-            <textarea
-              value={sql}
-              onChange={(e) => setSql(e.target.value)}
-              placeholder="SELECT * FROM credentials LIMIT 10;"
-              rows={6}
-              className="w-full rounded-md border bg-background px-3 py-2 font-mono text-sm outline-none focus:ring-2 focus:ring-ring"
-            />
-            <div className="mt-3 flex justify-end">
-              <button
-                onClick={() => handleRunQuery()}
-                disabled={running || !sql.trim()}
-                className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-              >
-                {running ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                ) : (
-                  <Play className="h-4 w-4" />
-                )}
-                {running ? "Running..." : "Run Query"}
-              </button>
-            </div>
-          </div>
-
-          {error && (
-            <div className="rounded-md bg-destructive/10 p-4 text-sm text-destructive">
-              {error}
-            </div>
-          )}
-
-          {results && (
-            <div className="rounded-lg border bg-card p-4">
-              <h3 className="mb-3 text-sm font-medium">
-                Results ({results.length} rows)
-              </h3>
-              {results.length > 0 ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr>
-                        {Object.keys(results[0]).map((key) => (
-                          <th
-                            key={key}
-                            className="border-b px-3 py-2 text-left font-medium text-muted-foreground"
-                          >
-                            {key}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {results.map((row, i) => (
-                        <tr key={i} className="hover:bg-muted/50">
-                          {Object.values(row).map((val, j) => (
-                            <td key={j} className="border-b px-3 py-2">
-                              {String(val ?? "NULL")}
-                            </td>
-                          ))}
-                        </tr>
+      ) : error ? (
+        <div className="flex h-96 items-center justify-center text-red-400">
+          Error: {error}
+        </div>
+      ) : !data || data.labels.length === 0 ? (
+        <div className="flex h-96 items-center justify-center text-muted-foreground">
+          No data available for this report
+        </div>
+      ) : (
+        <div className="grid gap-6 lg:grid-cols-3">
+          <div className="rounded-lg border border-border bg-card p-6 lg:col-span-2">
+            <h2 className="text-lg font-semibold mb-4">{reports.find((r) => r.value === selectedReport)?.label}</h2>
+            <div className="h-80">
+              <ResponsiveContainer width="100%" height="100%">
+                {isPie ? (
+                  <PieChart>
+                    <Pie
+                      data={chartData}
+                      dataKey="value"
+                      nameKey="name"
+                      cx="50%"
+                      cy="50%"
+                      outerRadius={100}
+                      label={({ name, value }) => `${name}: ${value}`}
+                    >
+                      {chartData.map((_, i) => (
+                        <Cell key={i} fill={COLORS[i % COLORS.length]} />
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground py-4 text-center">
-                  Query returned no results.
-                </p>
-              )}
-            </div>
-          )}
-
-          <div className="rounded-lg border bg-card p-4">
-            <h3 className="mb-3 text-sm font-medium">Visualization Preview</h3>
-            {results && results.length > 0 ? (
-              <ResponsiveContainer width="100%" height={300}>
-                <BarChart data={results.slice(0, 20) as Record<string, string | number>[]}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="hsl(var(--border))" />
-                  <XAxis
-                    dataKey={Object.keys(results[0])[0]}
-                    stroke="hsl(var(--muted-foreground))"
-                    fontSize={12}
-                  />
-                  <YAxis stroke="hsl(var(--muted-foreground))" fontSize={12} />
-                  <Tooltip
-                    contentStyle={{
-                      background: "hsl(var(--card))",
-                      border: "1px solid hsl(var(--border))",
-                      borderRadius: "8px",
-                    }}
-                  />
-                  <Bar
-                    dataKey={
-                      Object.keys(results[0]).find(
-                        (k) => typeof results[0][k] === "number"
-                      ) || Object.keys(results[0])[1]
-                    }
-                    fill="hsl(var(--primary))"
-                    radius={[4, 4, 0, 0]}
-                  />
-                </BarChart>
+                    </Pie>
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "hsl(222.2 84% 4.9%)",
+                        border: "1px solid hsl(217.2 32.6% 17.5%)",
+                        borderRadius: "0.5rem",
+                      }}
+                    />
+                  </PieChart>
+                ) : (
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="hsl(217.2 32.6% 17.5%)" />
+                    <XAxis dataKey="name" stroke="hsl(215 20.2% 65.1%)" fontSize={12} />
+                    <YAxis stroke="hsl(215 20.2% 65.1%)" fontSize={12} />
+                    <Tooltip
+                      contentStyle={{
+                        backgroundColor: "hsl(222.2 84% 4.9%)",
+                        border: "1px solid hsl(217.2 32.6% 17.5%)",
+                        borderRadius: "0.5rem",
+                      }}
+                    />
+                    <Bar dataKey="value" fill="hsl(210 40% 98%)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                )}
               </ResponsiveContainer>
-            ) : (
-              <div className="flex h-48 items-center justify-center text-sm text-muted-foreground">
-                Run a query to see visualization
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-card p-6">
+              <h3 className="text-sm font-medium text-muted-foreground">Total</h3>
+              <p className="text-3xl font-bold mt-1">{data.total}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-6">
+              <h3 className="text-sm font-medium text-muted-foreground">Average</h3>
+              <p className="text-3xl font-bold mt-1">{typeof data.average === "number" ? data.average.toFixed(1) : data.average}</p>
+            </div>
+            <div className="rounded-lg border border-border bg-card p-6">
+              <h3 className="text-sm font-medium text-muted-foreground">Breakdown</h3>
+              <div className="mt-3 space-y-2">
+                {chartData.map((item) => (
+                  <div key={item.name} className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{item.name}</span>
+                    <span className="font-medium">{item.value}</span>
+                  </div>
+                ))}
               </div>
-            )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
-  )
+  );
 }
