@@ -18,7 +18,11 @@ Clear Auth Header
     &{headers}=    Create Dictionary    Content-Type=${CONTENT_TYPE}
     Set Headers    ${headers}
 
-POST Credential Issue
+Health Check
+    GET    /health
+    Integer    response status    200
+
+Issue Credential
     [Arguments]    ${issuer_did}    ${subject_did}    ${credential_type}    ${claims}
     Set Auth Header
     &{body}=    Create Dictionary
@@ -29,25 +33,41 @@ POST Credential Issue
     POST    /api/v1/credentials/issue    ${body}
     Integer    response status    201
 
-POST Credential Verify
+POST Credential Issue
+    [Arguments]    ${issuer_did}    ${subject_did}    ${credential_type}    ${claims}
+    Issue Credential    ${issuer_did}    ${subject_did}    ${credential_type}    ${claims}
+
+Verify Credential
     [Arguments]    ${credential_json}
     Set Auth Header
     &{body}=    Create Dictionary    credential_json=${credential_json}
     POST    /api/v1/credentials/verify    ${body}
     Integer    response status    200
 
-POST Credential Revoke
+POST Credential Verify
+    [Arguments]    ${credential_json}
+    Verify Credential    ${credential_json}
+
+Revoke Credential
     [Arguments]    ${credential_id}
     Set Auth Header
     &{body}=    Create Dictionary    credential_id=${credential_id}
     POST    /api/v1/credentials/revoke    ${body}
     Integer    response status    200
 
-GET Credential By Id
+POST Credential Revoke
+    [Arguments]    ${credential_id}
+    Revoke Credential    ${credential_id}
+
+Get Credential
     [Arguments]    ${credential_id}
     Set Auth Header
     GET    /api/v1/credentials/${credential_id}
     Integer    response status    200
+
+GET Credential By Id
+    [Arguments]    ${credential_id}
+    Get Credential    ${credential_id}
 
 Create DID
     [Arguments]    ${method}    ${public_key}    ${domain}=${None}
@@ -65,20 +85,20 @@ Resolve DID
     GET    /api/v1/dids/resolve/${did}
     Integer    response status    200
 
-Create Webhook
+Register Webhook
     [Arguments]    ${url}    ${events}
     Set Auth Header
     &{body}=    Create Dictionary    url=${url}    events=${events}    secret=whsec_test
     POST    /api/v1/webhooks    ${body}
     Integer    response status    201
 
+Create Webhook
+    [Arguments]    ${url}    ${events}
+    Register Webhook    ${url}    ${events}
+
 Get Dashboard Metrics
     Set Auth Header
     GET    /api/v1/analytics/dashboard
-    Integer    response status    200
-
-Health Check
-    GET    /health
     Integer    response status    200
 
 Generate Test Keypair

@@ -1,121 +1,104 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { createDID } from "@/lib/api"
-import { Loader2 } from "lucide-react"
+import { useState } from "react";
+import { createDID } from "@/lib/api";
+import { X } from "lucide-react";
 
 interface DIDFormProps {
-  onSuccess?: () => void
-  onCancel?: () => void
+  open: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
 }
 
-export function DIDForm({ onSuccess, onCancel }: DIDFormProps) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [method, setMethod] = useState<"key" | "web">("key")
-  const [publicKey, setPublicKey] = useState("")
-  const [domain, setDomain] = useState("")
+export default function DIDForm({ open, onClose, onSuccess }: DIDFormProps) {
+  const [method, setMethod] = useState("key");
+  const [publicKey, setPublicKey] = useState("");
+  const [domain, setDomain] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  if (!open) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-
+    e.preventDefault();
+    setLoading(true);
+    setError("");
     try {
-      await createDID({
-        method,
-        public_key: publicKey,
-        ...(method === "web" ? { domain } : {}),
-      })
-      onSuccess?.()
+      await createDID(method, publicKey, domain || undefined);
+      onSuccess();
+      onClose();
+      setMethod("key");
+      setPublicKey("");
+      setDomain("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create DID")
+      setError(err instanceof Error ? err.message : "Failed to create DID");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">DID Method</label>
-        <div className="flex gap-4">
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="method"
-              value="key"
-              checked={method === "key"}
-              onChange={() => setMethod("key")}
-              className="text-primary"
-            />
-            did:key
-          </label>
-          <label className="flex items-center gap-2 text-sm">
-            <input
-              type="radio"
-              name="method"
-              value="web"
-              checked={method === "web"}
-              onChange={() => setMethod("web")}
-              className="text-primary"
-            />
-            did:web
-          </label>
-        </div>
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Public Key</label>
-        <textarea
-          value={publicKey}
-          onChange={(e) => setPublicKey(e.target.value)}
-          placeholder="Enter your public key in JWK or raw format..."
-          rows={4}
-          required
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-        />
-      </div>
-
-      {method === "web" && (
-        <div className="space-y-2">
-          <label className="text-sm font-medium">Domain</label>
-          <input
-            type="text"
-            value={domain}
-            onChange={(e) => setDomain(e.target.value)}
-            placeholder="example.com"
-            required
-            className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-          />
-        </div>
-      )}
-
-      <div className="flex justify-end gap-3 pt-2">
-        {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-          >
-            Cancel
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Create DID</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="h-5 w-5" />
           </button>
+        </div>
+        {error && (
+          <div className="mb-4 rounded border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-400">
+            {error}
+          </div>
         )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-          {loading ? "Creating..." : "Create DID"}
-        </button>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Method</label>
+            <select
+              value={method}
+              onChange={(e) => setMethod(e.target.value)}
+              className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="key">key</option>
+              <option value="web">web</option>
+              <option value="ethr">ethr</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Public Key</label>
+            <input
+              value={publicKey}
+              onChange={(e) => setPublicKey(e.target.value)}
+              className="w-full rounded border border-input bg-background px-3 py-2 text-sm font-mono"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Domain (optional, for did:web)</label>
+            <input
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+              className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="flex justify-end gap-3">
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded border border-border px-4 py-2 text-sm hover:bg-secondary"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              {loading ? "Creating..." : "Create DID"}
+            </button>
+          </div>
+        </form>
       </div>
-    </form>
-  )
+    </div>
+  );
 }

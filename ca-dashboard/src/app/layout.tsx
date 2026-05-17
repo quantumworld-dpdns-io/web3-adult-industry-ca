@@ -1,30 +1,24 @@
-import type { Metadata } from "next"
-import { Inter } from "next/font/google"
-import "./globals.css"
-import { Sidebar } from "@/components/Sidebar"
-import { Toaster } from "sonner"
+import type { Metadata } from "next";
+import { Inter } from "next/font/google";
+import { Toaster } from "sonner";
+import Sidebar from "@/components/Sidebar";
+import "./globals.css";
 
-const inter = Inter({ subsets: ["latin"] })
+const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "CA Dashboard - Web3 Adult Industry Certification Authority",
-  description: "Admin dashboard for managing credentials, DIDs, and more.",
-}
+  title: "CA Dashboard",
+  description: "Web3 Adult Industry Certification Authority Admin Dashboard",
+};
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en" className="dark">
+    <html lang="en">
       <body className={inter.className}>
-        <div className="flex min-h-screen">
-          <Sidebar />
-          <main className="flex-1 overflow-auto p-6 lg:p-8">{children}</main>
-        </div>
-        <Toaster richColors position="top-right" />
+        <Sidebar />
+        <main className="ml-64 min-h-screen p-8">{children}</main>
+        <Toaster position="bottom-right" theme="dark" />
       </body>
     </html>
-  )
+  );
 }

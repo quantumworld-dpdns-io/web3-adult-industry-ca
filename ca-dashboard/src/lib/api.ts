@@ -1,188 +1,138 @@
-import type {
-  ApiResponse,
-  Credential,
-  DashboardMetrics,
-  DID,
-  PaginatedResponse,
-  ReputationScore,
-  User,
-  VerificationResult,
-  Webhook,
-} from "./types"
+import type { Credential, DIDDocument, WebhookConfig, DashboardMetrics, User, AnalyticsResult } from "./types";
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 
-function getApiKey(): string | null {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("api_key") || process.env.NEXT_PUBLIC_API_KEY || null
-  }
-  return process.env.NEXT_PUBLIC_API_KEY || null
-}
-
-async function apiClient<T>(
-  endpoint: string,
+async function request<T>(
+  path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const apiKey = getApiKey()
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
-  }
+  };
 
+  const apiKey = process.env.NEXT_PUBLIC_API_KEY;
   if (apiKey) {
-    headers["X-API-Key"] = apiKey
+    headers["X-API-Key"] = apiKey;
   }
 
-  const response = await fetch(`${BASE_URL}${endpoint}`, {
+  const res = await fetch(`${BASE_URL}${path}`, {
     ...options,
     headers,
-  })
+  });
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => null)
-    const message = errorData?.detail || errorData?.error || `API error: ${response.statusText}`
-    throw new Error(message)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(body.detail || `Request failed: ${res.status}`);
   }
 
-  return response.json()
+  if (res.status === 204) return undefined as T;
+  return res.json();
 }
 
-export async function getDashboardMetrics(): Promise<ApiResponse<DashboardMetrics>> {
-  return apiClient("/api/admin/dashboard")
+// Health
+export async function healthCheck() {
+  return request<{ status: string }>("/health");
 }
 
-export async function issueCredential(data: {
-  type: string
-  issuer_did: string
-  subject_did: string
-  claims: Record<string, unknown>
-  expires_in_days?: number
-}): Promise<ApiResponse<Credential>> {
-  return apiClient("/api/credentials/issue", {
+// Credentials
+export async function issueCredential(
+  issuer_did: string,
+  subject_did: string,
+  credential_type: string,
+  claims: Record<string, unknown>,
+  expiration_days?: number
+) {
+  return request<Credential>("/credentials/issue", {
     method: "POST",
-    body: JSON.stringify(data),
-  })
+    body: JSON.stringify({ issuer_did, subject_did, credential_type, claims, expiration_days }),
+  });
 }
 
-export async function verifyCredential(credentialId: string): Promise<ApiResponse<VerificationResult>> {
-  return apiClient(`/api/credentials/${credentialId}/verify`)
-}
-
-export async function getCredentials(params?: {
-  type?: string
-  status?: string
-  page?: number
-  per_page?: number
-}): Promise<PaginatedResponse<Credential>> {
-  const searchParams = new URLSearchParams()
-  if (params?.type) searchParams.set("type", params.type)
-  if (params?.status) searchParams.set("status", params.status)
-  if (params?.page) searchParams.set("page", String(params.page))
-  if (params?.per_page) searchParams.set("per_page", String(params.per_page))
-  const qs = searchParams.toString()
-  return apiClient(`/api/credentials${qs ? `?${qs}` : ""}`)
-}
-
-export async function getCredential(id: string): Promise<ApiResponse<Credential>> {
-  return apiClient(`/api/credentials/${id}`)
-}
-
-export async function revokeCredential(id: string): Promise<ApiResponse<Credential>> {
-  return apiClient(`/api/credentials/${id}/revoke`, { method: "POST" })
-}
-
-export async function createDID(data: {
-  method: "key" | "web"
-  public_key: string
-  domain?: string
-}): Promise<ApiResponse<DID>> {
-  return apiClient("/api/dids/create", {
+export async function verifyCredential(credential_json: Record<string, unknown>) {
+  return request<{ valid: boolean; message: string }>("/credentials/verify", {
     method: "POST",
-    body: JSON.stringify(data),
-  })
+    body: JSON.stringify(credential_json),
+  });
 }
 
-export async function resolveDID(did: string): Promise<ApiResponse<DID>> {
-  return apiClient(`/api/dids/${encodeURIComponent(did)}`)
-}
-
-export async function getDIDs(): Promise<ApiResponse<DID[]>> {
-  return apiClient("/api/dids")
-}
-
-export async function getWebhooks(): Promise<ApiResponse<Webhook[]>> {
-  return apiClient("/api/admin/webhooks")
-}
-
-export async function createWebhook(data: {
-  url: string
-  events: string[]
-}): Promise<ApiResponse<Webhook>> {
-  return apiClient("/api/admin/webhooks", {
+export async function revokeCredential(credential_id: string) {
+  return request<Credential>(`/credentials/${credential_id}/revoke`, {
     method: "POST",
-    body: JSON.stringify(data),
-  })
+  });
 }
 
-export async function deleteWebhook(id: string): Promise<ApiResponse<void>> {
-  return apiClient(`/api/admin/webhooks/${id}`, { method: "DELETE" })
+export async function getCredential(id: string) {
+  return request<Credential>(`/credentials/${id}`);
 }
 
-export async function testWebhook(id: string): Promise<ApiResponse<{ status: number }>> {
-  return apiClient(`/api/admin/webhooks/${id}/test`, { method: "POST" })
+export async function getCredentials(params?: { type?: string; status?: string; search?: string }) {
+  const searchParams = new URLSearchParams();
+  if (params?.type) searchParams.set("type", params.type);
+  if (params?.status) searchParams.set("status", params.status);
+  if (params?.search) searchParams.set("search", params.search);
+  const qs = searchParams.toString();
+  return request<Credential[]>(`/credentials${qs ? `?${qs}` : ""}`);
 }
 
-export async function runAnalyticsQuery(sql: string): Promise<ApiResponse<Record<string, unknown>[]>> {
-  return apiClient("/api/admin/analytics/query", {
+// DIDs
+export async function createDID(method: string, public_key: string, domain?: string) {
+  return request<DIDDocument>("/dids/create", {
     method: "POST",
-    body: JSON.stringify({ sql }),
-  })
+    body: JSON.stringify({ method, public_key, domain }),
+  });
 }
 
-export async function getPredefinedQueries(): Promise<ApiResponse<Array<{ name: string; sql: string; description: string }>>> {
-  return apiClient("/api/admin/analytics/queries")
+export async function resolveDID(did: string) {
+  return request<DIDDocument>(`/dids/${encodeURIComponent(did)}`);
 }
 
-export async function adminGetUsers(): Promise<ApiResponse<User[]>> {
-  return apiClient("/api/admin/users")
+export async function getDIDs() {
+  return request<DIDDocument[]>("/dids");
 }
 
-export async function adminCreateUser(data: {
-  email: string
-  username: string
-  password: string
-  role: "admin" | "viewer"
-}): Promise<ApiResponse<User>> {
-  return apiClient("/api/admin/users", {
+// Webhooks
+export async function getWebhooks() {
+  return request<WebhookConfig[]>("/webhooks");
+}
+
+export async function createWebhook(url: string, events: string[]) {
+  return request<WebhookConfig>("/webhooks", {
     method: "POST",
-    body: JSON.stringify(data),
-  })
+    body: JSON.stringify({ url, events }),
+  });
 }
 
-export async function adminDeleteUser(id: string): Promise<ApiResponse<void>> {
-  return apiClient(`/api/admin/users/${id}`, { method: "DELETE" })
+export async function deleteWebhook(id: string) {
+  return request<void>(`/webhooks/${id}`, { method: "DELETE" });
 }
 
-export async function adminSeedData(): Promise<ApiResponse<{ message: string }>> {
-  return apiClient("/api/admin/seed", { method: "POST" })
+// Dashboard
+export async function getDashboardMetrics() {
+  return request<DashboardMetrics>("/dashboard/metrics");
 }
 
-export async function getReputation(did: string): Promise<ApiResponse<ReputationScore>> {
-  return apiClient(`/api/reputation/${encodeURIComponent(did)}`)
+// Analytics
+export async function getAnalytics(report: string) {
+  return request<AnalyticsResult>(`/analytics/${report}`);
 }
 
-export async function getTopReputation(limit?: number): Promise<ApiResponse<ReputationScore[]>> {
-  const qs = limit ? `?limit=${limit}` : ""
-  return apiClient(`/api/reputation/top${qs}`)
+// Users
+export async function getUsers() {
+  return request<User[]>("/admin/users");
 }
 
-export async function getCredentialsBySubject(
-  subjectDid: string,
-  params?: { page?: number; per_page?: number }
-): Promise<PaginatedResponse<Credential>> {
-  const searchParams = new URLSearchParams()
-  if (params?.page) searchParams.set("page", String(params.page))
-  if (params?.per_page) searchParams.set("per_page", String(params.per_page))
-  const qs = searchParams.toString()
-  return apiClient(`/api/credentials?subject_did=${encodeURIComponent(subjectDid)}${qs ? `&${qs}` : ""}`)
+export async function createUser(username: string, password: string, role: string) {
+  return request<User>("/admin/users", {
+    method: "POST",
+    body: JSON.stringify({ username, password, role }),
+  });
+}
+
+export async function deleteUser(id: string) {
+  return request<void>(`/admin/users/${id}`, { method: "DELETE" });
+}
+
+export async function seedData() {
+  return request<{ message: string }>("/admin/seed", { method: "POST" });
 }

@@ -1,8 +1,6 @@
 robotframework==7.1.0
 robotframework-restinstance==3.2.0
-robotframework-browser==18.6.0
 robotframework-requests==0.9.7
-robotframework-seleniumlibrary==6.2.0
 zapv2==0.0.11
 python-dotenv==1.0.0
 requests==2.32.0

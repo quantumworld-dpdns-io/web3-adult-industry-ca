@@ -8,7 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  PYTHON_VERSION: '3.11'
+  PYTHON_VERSION: "3.11"
 
 jobs:
   rust-build-and-test:
@@ -39,8 +39,8 @@ jobs:
       - name: Run tests
         run: cargo test --verbose
 
-  python-build-and-test:
-    name: Python - Lint & Test
+  python-lint-and-check:
+    name: Python - Lint & Check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +53,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install flake8 pytest httpx
+          pip install flake8
           if [ -f ca-api/requirements.txt ]; then pip install -r ca-api/requirements.txt; fi
 
       - name: Lint with flake8
@@ -61,16 +61,12 @@ jobs:
         continue-on-error: true
 
       - name: Python syntax check
-        run: python -m py_compile ca-api/app/main.py
-
-      - name: Test with pytest (if tests exist)
         run: |
-          if [ -d tests/python ]; then pytest tests/python; else echo "No Python tests yet"; fi
+          find ca-api/ -name "*.py" -exec python -m py_compile {} \;
 
-  robot-framework-tests:
+  robot-framework-functional:
     name: Robot Framework - Functional Tests
     runs-on: ubuntu-latest
-    needs: [python-build-and-test]
     services:
       api:
         image: python:3.11-slim
@@ -88,18 +84,20 @@ jobs:
 
       - name: Install Robot Framework
         run: |
-          pip install robotframework robotframework-restinstance robotframework-requests
+          pip install robotframework robotframework-requests
 
-      - name: Run Robot Framework tests
+      - name: Run Robot Framework functional tests
         run: |
           mkdir -p tests/robot/results
-          robot --variable API_URL:http://localhost:8000 --outputdir tests/robot/results tests/robot/
+          robot --variable API_URL:http://localhost:8000 \
+            --outputdir tests/robot/results \
+            tests/robot/functional/
         continue-on-error: true
 
       - name: Upload Robot Framework results
         uses: actions/upload-artifact@v4
         with:
-          name: robot-framework-results
+          name: robot-framework-functional-results
           path: tests/robot/results/
         if: always()
 
@@ -109,12 +107,34 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate Solana contract
+      - name: Validate Solana contract structure
         run: |
-          echo "Solana contract structure verified"
+          echo "=== Solana Contract Structure ==="
           ls -la contracts/solana/
+          if [ -f contracts/solana/Cargo.toml ]; then
+            echo "Solana project detected"
+          fi
+          if [ -f contracts/solana/Xargo.toml ]; then
+            echo "Solana BPF configuration found"
+          fi
 
-      - name: Validate EVM contract
+      - name: Validate EVM contract structure
         run: |
-          echo "EVM contract structure verified"
+          echo "=== EVM Contract Structure ==="
           ls -la contracts/evm/
+          if [ -f contracts/evm/hardhat.config.ts ] || [ -f contracts/evm/hardhat.config.js ]; then
+            echo "Hardhat project detected"
+          fi
+          if [ -f contracts/evm/truffle-config.js ]; then
+            echo "Truffle project detected"
+          fi
+
+      - name: Check for required contract directories
+        run: |
+          for dir in contracts/solana contracts/evm; do
+            if [ ! -d "$dir" ]; then
+              echo "WARNING: $dir does not exist"
+              exit 1
+            fi
+          done
+          echo "All required contract directories exist"

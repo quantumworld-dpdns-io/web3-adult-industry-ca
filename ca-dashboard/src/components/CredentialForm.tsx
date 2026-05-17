@@ -1,179 +1,141 @@
-"use client"
+"use client";
 
-import { useState } from "react"
-import { issueCredential } from "@/lib/api"
-import { Loader2 } from "lucide-react"
-
-const credentialTypes = [
-  { value: "AgeVerification", label: "Age Verification" },
-  { value: "IdentityVerification", label: "Identity Verification" },
-  { value: "ContentCreator", label: "Content Creator" },
-  { value: "PlatformLicense", label: "Platform License" },
-  { value: "ComplianceCertificate", label: "Compliance Certificate" },
-]
+import { useState } from "react";
+import { issueCredential } from "@/lib/api";
+import { X } from "lucide-react";
 
 interface CredentialFormProps {
-  onSuccess?: () => void
-  onCancel?: () => void
+  open: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
 }
 
-export function CredentialForm({ onSuccess, onCancel }: CredentialFormProps) {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [formData, setFormData] = useState({
-    type: "AgeVerification",
-    issuer_did: "",
-    subject_did: "",
-    expires_in_days: 365,
-  })
-  const [claims, setClaims] = useState<Record<string, string>>({})
+export default function CredentialForm({ open, onClose, onSuccess }: CredentialFormProps) {
+  const [issuerDid, setIssuerDid] = useState("");
+  const [subjectDid, setSubjectDid] = useState("");
+  const [credentialType, setCredentialType] = useState("identity");
+  const [claims, setClaims] = useState("{}");
+  const [expirationDays, setExpirationDays] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  const addClaim = () => {
-    const key = prompt("Claim key:")
-    if (key) setClaims((c) => ({ ...c, [key]: "" }))
-  }
-
-  const removeClaim = (key: string) => {
-    setClaims((c) => {
-      const next = { ...c }
-      delete next[key]
-      return next
-    })
-  }
+  if (!open) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setLoading(true)
-    setError(null)
-
+    e.preventDefault();
+    setLoading(true);
+    setError("");
     try {
-      const claimsObj: Record<string, unknown> = {}
-      for (const [k, v] of Object.entries(claims)) {
-        claimsObj[k] = v
+      let parsedClaims: Record<string, unknown>;
+      try {
+        parsedClaims = JSON.parse(claims);
+      } catch {
+        throw new Error("Invalid JSON in claims field");
       }
-      await issueCredential({
-        ...formData,
-        claims: claimsObj,
-      })
-      onSuccess?.()
+      await issueCredential(
+        issuerDid,
+        subjectDid,
+        credentialType,
+        parsedClaims,
+        expirationDays ? parseInt(expirationDays) : undefined
+      );
+      onSuccess();
+      onClose();
+      setIssuerDid("");
+      setSubjectDid("");
+      setCredentialType("identity");
+      setClaims("{}");
+      setExpirationDays("");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to issue credential")
+      setError(err instanceof Error ? err.message : "Failed to issue credential");
     } finally {
-      setLoading(false)
+      setLoading(false);
     }
-  }
+  };
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
-        <div className="rounded-md bg-destructive/10 p-3 text-sm text-destructive">
-          {error}
-        </div>
-      )}
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Credential Type</label>
-        <select
-          value={formData.type}
-          onChange={(e) => setFormData((f) => ({ ...f, type: e.target.value }))}
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-        >
-          {credentialTypes.map((t) => (
-            <option key={t.value} value={t.value}>
-              {t.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Issuer DID</label>
-        <input
-          type="text"
-          value={formData.issuer_did}
-          onChange={(e) => setFormData((f) => ({ ...f, issuer_did: e.target.value }))}
-          placeholder="did:key:z6Mk..."
-          required
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">Subject DID</label>
-        <input
-          type="text"
-          value={formData.subject_did}
-          onChange={(e) => setFormData((f) => ({ ...f, subject_did: e.target.value }))}
-          placeholder="did:key:z6Mk..."
-          required
-          className="w-full rounded-md border bg-background px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-ring"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <label className="text-sm font-medium">
-          Expires In (days): {formData.expires_in_days}
-        </label>
-        <input
-          type="range"
-          min={1}
-          max={1825}
-          value={formData.expires_in_days}
-          onChange={(e) => setFormData((f) => ({ ...f, expires_in_days: Number(e.target.value) }))}
-          className="w-full"
-        />
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <label className="text-sm font-medium">Custom Claims</label>
-          <button
-            type="button"
-            onClick={addClaim}
-            className="text-xs text-primary hover:underline"
-          >
-            + Add Claim
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+      <div className="w-full max-w-lg rounded-lg border border-border bg-card p-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Issue Credential</h2>
+          <button onClick={onClose} className="text-muted-foreground hover:text-foreground">
+            <X className="h-5 w-5" />
           </button>
         </div>
-        {Object.entries(claims).map(([key, value]) => (
-          <div key={key} className="flex items-center gap-2">
-            <span className="w-24 text-xs text-muted-foreground">{key}:</span>
+        {error && (
+          <div className="mb-4 rounded border border-red-500/50 bg-red-500/10 p-3 text-sm text-red-400">
+            {error}
+          </div>
+        )}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">Issuer DID</label>
             <input
-              type="text"
-              value={value}
-              onChange={(e) => setClaims((c) => ({ ...c, [key]: e.target.value }))}
-              className="flex-1 rounded-md border bg-background px-2 py-1 text-sm outline-none focus:ring-2 focus:ring-ring"
+              value={issuerDid}
+              onChange={(e) => setIssuerDid(e.target.value)}
+              className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+              required
             />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Subject DID</label>
+            <input
+              value={subjectDid}
+              onChange={(e) => setSubjectDid(e.target.value)}
+              className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+              required
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Credential Type</label>
+            <select
+              value={credentialType}
+              onChange={(e) => setCredentialType(e.target.value)}
+              className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+            >
+              <option value="identity">Identity</option>
+              <option value="age_verification">Age Verification</option>
+              <option value="content_license">Content License</option>
+              <option value="platform_membership">Platform Membership</option>
+            </select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Claims (JSON)</label>
+            <textarea
+              value={claims}
+              onChange={(e) => setClaims(e.target.value)}
+              className="w-full rounded border border-input bg-background px-3 py-2 text-sm font-mono"
+              rows={4}
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Expiration Days (optional)</label>
+            <input
+              type="number"
+              value={expirationDays}
+              onChange={(e) => setExpirationDays(e.target.value)}
+              className="w-full rounded border border-input bg-background px-3 py-2 text-sm"
+              min="1"
+            />
+          </div>
+          <div className="flex justify-end gap-3">
             <button
               type="button"
-              onClick={() => removeClaim(key)}
-              className="text-xs text-destructive hover:underline"
+              onClick={onClose}
+              className="rounded border border-border px-4 py-2 text-sm hover:bg-secondary"
             >
-              Remove
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={loading}
+              className="rounded bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:opacity-90 disabled:opacity-50"
+            >
+              {loading ? "Issuing..." : "Issue Credential"}
             </button>
           </div>
-        ))}
+        </form>
       </div>
-
-      <div className="flex justify-end gap-3 pt-2">
-        {onCancel && (
-          <button
-            type="button"
-            onClick={onCancel}
-            className="rounded-md border bg-background px-4 py-2 text-sm font-medium hover:bg-accent"
-          >
-            Cancel
-          </button>
-        )}
-        <button
-          type="submit"
-          disabled={loading}
-          className="inline-flex items-center gap-2 rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 disabled:opacity-50"
-        >
-          {loading && <Loader2 className="h-4 w-4 animate-spin" />}
-          {loading ? "Issuing..." : "Issue Credential"}
-        </button>
-      </div>
-    </form>
-  )
+    </div>
+  );
 }
