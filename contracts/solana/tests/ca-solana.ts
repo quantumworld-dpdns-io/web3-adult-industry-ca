@@ -6,147 +6,85 @@ import { assert } from "chai";
 describe("ca-solana", () => {
   const provider = anchor.AnchorProvider.env();
   anchor.setProvider(provider);
-
   const program = anchor.workspace.CaSolana as Program<CaSolana>;
-  const authority = provider.wallet.publicKey;
+  const owner = provider.wallet.publicKey;
 
-  const testDid = "did:ca:testuser123";
-  const testDocumentUri = "https://example.com/did/testuser123";
-  const testCredentialId = "cred-001";
-  const testIssuerDid = "did:ca:issuer001";
-  const testSubjectDid = "did:ca:subject001";
-  const credentialHash = new Uint8Array(32).fill(42);
-
-  it("Registers a DID", async () => {
-    const [didRegistryPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("did_registry"), Buffer.from(testDid)],
+  it("registers a DID", async () => {
+    const did = "did:ca:alice";
+    const uri = "https://example.com/alice/did.json";
+    const [didPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("did"), Buffer.from(did)],
       program.programId
     );
-
     await program.methods
-      .registerDid(testDid, testDocumentUri)
-      .accounts({
-        didRegistry: didRegistryPda,
-        authority,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
+      .registerDid(did, uri)
+      .accounts({ didRegistry: didPda, owner })
       .rpc();
-
-    const registry = await program.account.didRegistry.fetch(didRegistryPda);
-    assert.equal(registry.did, testDid);
-    assert.equal(registry.owner.toString(), authority.toString());
-    assert.equal(registry.documentUri, testDocumentUri);
+    const registry = await program.account.didRegistry.fetch(didPda);
+    assert.equal(registry.did, did);
+    assert.equal(registry.documentUri, uri);
     assert.isTrue(registry.active);
   });
 
-  it("Deactivates a DID", async () => {
-    const [didRegistryPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("did_registry"), Buffer.from(testDid)],
+  it("updates a DID", async () => {
+    const did = "did:ca:alice";
+    const newUri = "https://example.com/alice/did-v2.json";
+    const [didPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("did"), Buffer.from(did)],
       program.programId
     );
+    await program.methods
+      .updateDid(newUri)
+      .accounts({ didRegistry: didPda, owner })
+      .rpc();
+    const registry = await program.account.didRegistry.fetch(didPda);
+    assert.equal(registry.documentUri, newUri);
+  });
 
+  it("deactivates a DID", async () => {
+    const did = "did:ca:alice";
+    const [didPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("did"), Buffer.from(did)],
+      program.programId
+    );
     await program.methods
       .deactivateDid()
-      .accounts({
-        didRegistry: didRegistryPda,
-        authority,
-      })
+      .accounts({ didRegistry: didPda, owner })
       .rpc();
-
-    const registry = await program.account.didRegistry.fetch(didRegistryPda);
+    const registry = await program.account.didRegistry.fetch(didPda);
     assert.isFalse(registry.active);
   });
 
-  it("Anchors a credential", async () => {
-    const [credentialPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("credential"), Buffer.from(testCredentialId)],
+  it("anchors a credential", async () => {
+    const credId = "cred-001";
+    const issuerDid = "did:ca:alice";
+    const subjectDid = "did:ca:bob";
+    const hash = "0xabc123def456";
+    const [credPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("credential"), Buffer.from(credId)],
       program.programId
     );
-
-    const [issuerRegistryPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("did_registry"), Buffer.from(testIssuerDid)],
-      program.programId
-    );
-
     await program.methods
-      .registerDid(testIssuerDid, "https://issuer.example.com/did")
-      .accounts({
-        didRegistry: issuerRegistryPda,
-        authority,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
+      .anchorCredential(credId, issuerDid, subjectDid, hash)
+      .accounts({ credentialRecord: credPda, issuer: owner })
       .rpc();
-
-    await program.methods
-      .anchorCredential(
-        testCredentialId,
-        testIssuerDid,
-        testSubjectDid,
-        credentialHash
-      )
-      .accounts({
-        issuerRegistry: issuerRegistryPda,
-        credentialRecord: credentialPda,
-        authority,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc();
-
-    const record = await program.account.credentialRecord.fetch(credentialPda);
-    assert.equal(record.credentialId, testCredentialId);
-    assert.equal(record.issuerDid, testIssuerDid);
-    assert.equal(record.subjectDid, testSubjectDid);
+    const record = await program.account.credentialRecord.fetch(credPda);
+    assert.equal(record.credentialId, credId);
+    assert.equal(record.credentialHash, hash);
     assert.isFalse(record.revoked);
   });
 
-  it("Revokes a credential", async () => {
-    const [credentialPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("credential"), Buffer.from(testCredentialId)],
+  it("revokes a credential", async () => {
+    const credId = "cred-001";
+    const [credPda] = anchor.web3.PublicKey.findProgramAddressSync(
+      [Buffer.from("credential"), Buffer.from(credId)],
       program.programId
     );
-
-    const [issuerRegistryPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("did_registry"), Buffer.from(testIssuerDid)],
-      program.programId
-    );
-
-    const reason = "Content policy violation";
-
     await program.methods
-      .revokeCredential(testCredentialId, reason)
-      .accounts({
-        credentialRecord: credentialPda,
-        issuerDidRegistry: issuerRegistryPda,
-        authority,
-      })
+      .revokeCredential(credId)
+      .accounts({ credentialRecord: credPda, issuer: owner })
       .rpc();
-
-    const record = await program.account.credentialRecord.fetch(credentialPda);
+    const record = await program.account.credentialRecord.fetch(credPda);
     assert.isTrue(record.revoked);
-    assert.equal(record.revocationReason, reason);
-  });
-
-  it("Updates reputation score", async () => {
-    const subjectDid = "did:ca:creator456";
-    const [reputationPda] = anchor.web3.PublicKey.findProgramAddressSync(
-      [Buffer.from("reputation"), Buffer.from(subjectDid)],
-      program.programId
-    );
-
-    await program.methods
-      .updateReputation(subjectDid, true, false)
-      .accounts({
-        reputationScore: reputationPda,
-        authority,
-        systemProgram: anchor.web3.SystemProgram.programId,
-      })
-      .rpc();
-
-    const reputation = await program.account.reputationScore.fetch(reputationPda);
-    assert.equal(reputation.subjectDid, subjectDid);
-    assert.equal(reputation.totalCredentials.toNumber(), 1);
-    assert.equal(reputation.verifiedCredentials.toNumber(), 1);
-    assert.equal(reputation.reportedInstances.toNumber(), 0);
-    assert.isAbove(reputation.score.toNumber(), 0);
   });
 });

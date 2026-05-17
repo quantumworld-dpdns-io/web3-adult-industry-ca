@@ -167,7 +167,7 @@ pub fn base58_decode(data: &str) -> Result<Vec<u8>, CryptoError> {
     Ok(result)
 }
 
-pub fn public_key_to_did_key(public_key: &[u8]) -> String {
+pub fn key_to_did_key(public_key: &[u8]) -> String {
     let mut multicodec_key = vec![0xed, 0x01];
     multicodec_key.extend_from_slice(public_key);
     let encoded = base58_encode(&multicodec_key);
@@ -216,9 +216,9 @@ mod tests {
     }
 
     #[test]
-    fn test_public_key_to_did_key_format() {
+    fn test_key_to_did_key_format() {
         let kp = generate_keypair();
-        let did = public_key_to_did_key(&kp.public);
+        let did = key_to_did_key(&kp.public);
         assert!(did.starts_with("did:key:z"));
         assert!(did.len() > 50 && did.len() < 70);
     }

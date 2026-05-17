@@ -49,7 +49,7 @@ pub struct Service {
 }
 
 pub fn create_did_key(public_key: &[u8]) -> DidDocument {
-    let did = crate::crypto::public_key_to_did_key(public_key);
+    let did = crate::crypto::key_to_did_key(public_key);
     let key_fragment = did.trim_start_matches("did:key:");
     let vm_id = format!("{}#{}", did, key_fragment);
 
@@ -71,7 +71,7 @@ pub fn create_did_key(public_key: &[u8]) -> DidDocument {
 }
 
 pub fn create_did_web(domain: &str, path: &str, public_key: &[u8]) -> DidDocument {
-    let did_key = crate::crypto::public_key_to_did_key(public_key);
+    let did_key = crate::crypto::key_to_did_key(public_key);
     let key_fragment = did_key.trim_start_matches("did:key:");
 
     let did_web = if path.is_empty() || path == "/" {
