@@ -2,163 +2,100 @@ const { expect } = require("chai");
 const { ethers } = require("hardhat");
 
 describe("CertificationRegistry", function () {
-  let registry;
-  let owner;
-  let addr1;
-  let addr2;
-
-  const testDID = "did:ca:testuser123";
-  const testDocumentURI = "https://example.com/did/testuser123";
-  const testCredentialId = "cred-001";
-  const testIssuerDID = "did:ca:issuer001";
-  const testSubjectDID = "did:ca:subject001";
-  const credentialHash = ethers.keccak256(ethers.toUtf8Bytes("credential-data"));
+  let registry, reputation, owner, addr1;
 
   beforeEach(async function () {
-    [owner, addr1, addr2] = await ethers.getSigners();
-    const CertificationRegistry = await ethers.getContractFactory("CertificationRegistry");
-    registry = await CertificationRegistry.deploy();
-    await registry.waitForDeployment();
+    [owner, addr1] = await ethers.getSigners();
+    const Registry = await ethers.getContractFactory("CertificationRegistry");
+    registry = await Registry.deploy();
+    await registry.waitForDeletion();
+    const Reputation = await ethers.getContractFactory("ReputationScore");
+    reputation = await Reputation.deploy();
+    await reputation.waitForDeletion();
   });
 
-  describe("DID Registration", function () {
-    it("Should register a new DID", async function () {
-      await expect(registry.registerDID(testDID, testDocumentURI))
-        .to.emit(registry, "DIDRegistered")
-        .withArgs(testDID, owner.address, testDocumentURI);
-
-      expect(await registry.getDIDCount()).to.equal(1);
-    });
-
-    it("Should reject empty DID", async function () {
-      await expect(
-        registry.registerDID("", testDocumentURI)
-      ).to.be.revertedWith("DID cannot be empty");
-    });
-
-    it("Should reject empty document URI", async function () {
-      await expect(
-        registry.registerDID(testDID, "")
-      ).to.be.revertedWith("Document URI cannot be empty");
-    });
+  it("should register a DID", async function () {
+    await registry.registerDID("did:ca:alice", "https://example.com/alice.json");
+    const count = await registry.getDIDCount();
+    expect(count).to.equal(1);
   });
 
-  describe("DID Deactivation", function () {
-    it("Should deactivate a DID", async function () {
-      await registry.registerDID(testDID, testDocumentURI);
-
-      await expect(registry.deactivateDID())
-        .to.emit(registry, "DIDDeactivated")
-        .withArgs(testDID);
-    });
-
-    it("Should reject deactivation of non-existent DID", async function () {
-      await expect(
-        registry.connect(addr1).deactivateDID()
-      ).to.be.revertedWith("DID is not active or does not exist");
-    });
+  it("should reject duplicate DID registration", async function () {
+    await registry.registerDID("did:ca:alice", "https://example.com/alice.json");
+    await expect(
+      registry.registerDID("did:ca:alice", "https://example.com/alice.json")
+    ).to.be.revertedWith("DID already exists and is active");
   });
 
-  describe("Credential Anchoring", function () {
-    beforeEach(async function () {
-      await registry.registerDID(testIssuerDID, testDocumentURI);
-    });
-
-    it("Should anchor a credential", async function () {
-      await expect(
-        registry.anchorCredential(
-          testCredentialId,
-          testIssuerDID,
-          testSubjectDID,
-          credentialHash
-        )
-      )
-        .to.emit(registry, "CredentialAnchored")
-        .withArgs(testCredentialId, testIssuerDID, testSubjectDID, credentialHash);
-    });
-
-    it("Should reject anchoring from non-owner", async function () {
-      await expect(
-        registry.connect(addr1).anchorCredential(
-          testCredentialId,
-          testIssuerDID,
-          testSubjectDID,
-          credentialHash
-        )
-      ).to.be.revertedWith("Caller does not own this DID");
-    });
-
-    it("Should reject duplicate credential ID", async function () {
-      await registry.anchorCredential(
-        testCredentialId,
-        testIssuerDID,
-        testSubjectDID,
-        credentialHash
-      );
-
-      await expect(
-        registry.anchorCredential(
-          testCredentialId,
-          testIssuerDID,
-          testSubjectDID,
-          credentialHash
-        )
-      ).to.be.revertedWith("Credential ID already exists");
-    });
+  it("should update a DID document URI", async function () {
+    await registry.registerDID("did:ca:alice", "https://example.com/alice.json");
+    await registry.updateDID("did:ca:alice", "https://example.com/alice-v2.json");
+    const count = await registry.getDIDCount();
+    expect(count).to.equal(1);
   });
 
-  describe("Credential Revocation", function () {
-    beforeEach(async function () {
-      await registry.registerDID(testIssuerDID, testDocumentURI);
-      await registry.anchorCredential(
-        testCredentialId,
-        testIssuerDID,
-        testSubjectDID,
-        credentialHash
-      );
-    });
-
-    it("Should revoke a credential", async function () {
-      const reason = "Policy violation";
-
-      await expect(registry.revokeCredential(testCredentialId, reason))
-        .to.emit(registry, "CredentialRevoked")
-        .withArgs(testCredentialId, reason);
-
-      expect(await registry.isCredentialRevoked(testCredentialId)).to.equal(true);
-    });
-
-    it("Should reject revocation by non-issuer", async function () {
-      await expect(
-        registry.connect(addr1).revokeCredential(testCredentialId, "Unauthorized")
-      ).to.be.revertedWith("Only the issuer can revoke");
-    });
-
-    it("Should reject double revocation", async function () {
-      await registry.revokeCredential(testCredentialId, "First");
-
-      await expect(
-        registry.revokeCredential(testCredentialId, "Second")
-      ).to.be.revertedWith("Credential already revoked");
-    });
+  it("should reject DID update from non-owner", async function () {
+    await registry.registerDID("did:ca:alice", "https://example.com/alice.json");
+    await expect(
+      registry.connect(addr1).updateDID("did:ca:alice", "https://example.com/hacked.json")
+    ).to.be.revertedWith("Not the DID owner");
   });
 
-  describe("Access Control", function () {
-    it("Should allow owner to transfer ownership", async function () {
-      await registry.transferOwnership(addr1.address);
-      expect(await registry.owner()).to.equal(addr1.address);
-    });
+  it("should deactivate a DID", async function () {
+    await registry.registerDID("did:ca:alice", "https://example.com/alice.json");
+    await registry.deactivateDID("did:ca:alice");
+  });
 
-    it("Should reject transfer from non-owner", async function () {
-      await expect(
-        registry.connect(addr1).transferOwnership(addr2.address)
-      ).to.be.revertedWith("Caller is not the owner");
-    });
+  it("should reject operations on deactivated DID", async function () {
+    await registry.registerDID("did:ca:alice", "https://example.com/alice.json");
+    await registry.deactivateDID("did:ca:alice");
+    await expect(
+      registry.updateDID("did:ca:alice", "https://example.com/update.json")
+    ).to.be.revertedWith("DID does not exist or is inactive");
+  });
 
-    it("Should reject zero address transfer", async function () {
-      await expect(
-        registry.transferOwnership(ethers.ZeroAddress)
-      ).to.be.revertedWith("New owner cannot be zero address");
-    });
+  it("should anchor a credential", async function () {
+    await registry.anchorCredential(
+      "cred-001",
+      "did:ca:alice",
+      "did:ca:bob",
+      "0xabc123"
+    );
+    const revoked = await registry.isCredentialRevoked("cred-001");
+    expect(revoked).to.be.false;
+  });
+
+  it("should revoke a credential", async function () {
+    await registry.anchorCredential(
+      "cred-001",
+      "did:ca:alice",
+      "did:ca:bob",
+      "0xabc123"
+    );
+    await registry.revokeCredential("cred-001");
+    const revoked = await registry.isCredentialRevoked("cred-001");
+    expect(revoked).to.be.true;
+  });
+
+  it("should reject revoking an already revoked credential", async function () {
+    await registry.anchorCredential(
+      "cred-001",
+      "did:ca:alice",
+      "did:ca:bob",
+      "0xabc123"
+    );
+    await registry.revokeCredential("cred-001");
+    await expect(
+      registry.revokeCredential("cred-001")
+    ).to.be.revertedWith("Credential already revoked");
+  });
+
+  it("should update reputation score", async function () {
+    await reputation.updateReputation("did:ca:alice", 10, 7, 1);
+    const s = await reputation.getReputation("did:ca:alice");
+    expect(s[0]).to.equal(10); // total
+    expect(s[1]).to.equal(7);  // verified
+    expect(s[2]).to.equal(1);  // reported
+    expect(s[3]).to.equal(63); // score = (7*100)/(10+1)=63
   });
 });

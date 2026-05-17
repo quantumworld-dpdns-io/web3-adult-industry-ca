@@ -1,27 +1,21 @@
-const { ethers } = require("hardhat");
+const hre = require("hardhat");
 
 async function main() {
-  const [deployer] = await ethers.getSigners();
-  console.log("Deploying contracts with account:", deployer.address);
+  const [deployer] = await hre.ethers.getSigners();
+  console.log("Deploying with account:", deployer.address);
 
-  const CertificationRegistry = await ethers.getContractFactory("CertificationRegistry");
+  const CertificationRegistry = await hre.ethers.getContractFactory("CertificationRegistry");
   const registry = await CertificationRegistry.deploy();
-  await registry.waitForDeployment();
-  console.log("CertificationRegistry deployed to:", await registry.getAddress());
+  await registry.waitForDeletion();
+  console.log("CertificationRegistry deployed to:", registry.target);
 
-  const ReputationScore = await ethers.getContractFactory("ReputationScore");
+  const ReputationScore = await hre.ethers.getContractFactory("ReputationScore");
   const reputation = await ReputationScore.deploy();
-  await reputation.waitForDeployment();
-  console.log("ReputationScore deployed to:", await reputation.getAddress());
-
-  console.log("\nDeployment complete!");
-  console.log("CertificationRegistry:", await registry.getAddress());
-  console.log("ReputationScore:", await reputation.getAddress());
+  await reputation.waitForDeletion();
+  console.log("ReputationScore deployed to:", reputation.target);
 }
 
-main()
-  .then(() => process.exit(0))
-  .catch((error) => {
-    console.error(error);
-    process.exit(1);
-  });
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
