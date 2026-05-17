@@ -4,6 +4,9 @@ import uuid
 from datetime import datetime, timedelta
 from typing import Any
 
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
+from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption, PublicFormat
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import TextContent, Tool
@@ -117,6 +120,25 @@ def _generate_id() -> str:
     return f"urn:uuid:{uuid.uuid4()}"
 
 
+def _canonical_json(obj: Any) -> bytes:
+    return json.dumps(obj, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+
+_issuer_key: Ed25519PrivateKey | None = None
+_issuer_public_bytes: bytes | None = None
+
+
+def _get_issuer_keypair() -> tuple[Ed25519PrivateKey, bytes]:
+    global _issuer_key, _issuer_public_bytes
+    if _issuer_key is None:
+        _issuer_key = Ed25519PrivateKey.generate()
+        _issuer_public_bytes = _issuer_key.public_key().public_bytes(
+            Encoding.Raw, PublicFormat.Raw
+        )
+        logger.info("Generated Ed25519 issuer keypair")
+    return _issuer_key, _issuer_public_bytes
+
+
 def _issue_credential(
     issuer_did: str,
     subject_did: str,
@@ -127,11 +149,10 @@ def _issue_credential(
     credential_id = _generate_id()
     now = datetime.utcnow()
     expiration = now + timedelta(days=expiration_days)
+    ts = _timestamp()
 
-    credential = {
-        "@context": [
-            "https://www.w3.org/2018/credentials/v1",
-        ],
+    unsigned = {
+        "@context": ["https://www.w3.org/2018/credentials/v1"],
         "id": credential_id,
         "type": ["VerifiableCredential", credential_type],
         "issuer": issuer_did,
@@ -141,12 +162,27 @@ def _issue_credential(
             "id": subject_did,
             **claims,
         },
+    }
+
+    signer, pub_bytes = _get_issuer_keypair()
+    proof_payload = {
+        "type": "Ed25519Signature2020",
+        "created": ts,
+        "verificationMethod": f"{issuer_did}#keys-1",
+        "proofPurpose": "assertionMethod",
+        "unsignedCredential": unsigned,
+    }
+    proof_value = signer.sign(_canonical_json(proof_payload))
+    proof_value_b64 = proof_value.hex()
+
+    credential = {
+        **unsigned,
         "proof": {
             "type": "Ed25519Signature2020",
-            "created": _timestamp(),
+            "created": ts,
             "verificationMethod": f"{issuer_did}#keys-1",
             "proofPurpose": "assertionMethod",
-            "proofValue": f"sig_{credential_id}_{_timestamp()}",
+            "proofValue": proof_value_b64,
         },
     }
 
@@ -154,19 +190,21 @@ def _issue_credential(
         "credential": credential,
         "revoked": False,
         "revocation_reason": None,
+        "public_key_bytes": pub_bytes.hex(),
     }
     IN_MEMORY_STORE["stats"]["total_credentials"] += 1
 
     if issuer_did not in IN_MEMORY_STORE["dids"]:
         IN_MEMORY_STORE["dids"][issuer_did] = {
             "did": issuer_did,
-            "created": _timestamp(),
+            "created": ts,
+            "public_key_bytes": pub_bytes.hex(),
         }
         IN_MEMORY_STORE["stats"]["active_dids"] += 1
     if subject_did not in IN_MEMORY_STORE["dids"]:
         IN_MEMORY_STORE["dids"][subject_did] = {
             "did": subject_did,
-            "created": _timestamp(),
+            "created": ts,
         }
         IN_MEMORY_STORE["stats"]["active_dids"] += 1
 
@@ -185,9 +223,12 @@ def _verify_credential(credential_json: dict[str, Any]) -> dict[str, Any]:
     if not proof:
         return {"valid": False, "reason": "Credential missing proof", "metadata": {}}
 
+    proof_value_hex = proof.get("proofValue", "")
+    if not proof_value_hex:
+        return {"valid": False, "reason": "Proof missing proofValue", "metadata": {}}
+
     issuance_date = credential_json.get("issuanceDate")
     expiration_date = credential_json.get("expirationDate")
-
     now = datetime.utcnow()
 
     if expiration_date:
@@ -199,13 +240,39 @@ def _verify_credential(credential_json: dict[str, Any]) -> dict[str, Any]:
         record = IN_MEMORY_STORE["credentials"][credential_id]
         if record["revoked"]:
             return {"valid": False, "reason": f"Credential has been revoked: {record['revocation_reason']}", "metadata": {"credentialId": credential_id}}
+
+    record = IN_MEMORY_STORE["credentials"].get(credential_id)
+    if record:
+        pub_key_hex = record.get("public_key_bytes")
     else:
-        logger.warning("Credential %s not found in local store, verifying structure only", credential_id)
+        issuer = credential_json.get("issuer", "")
+        did_record = IN_MEMORY_STORE["dids"].get(issuer)
+        pub_key_hex = did_record.get("public_key_bytes") if did_record else None
+
+    if pub_key_hex:
+        try:
+            public_key = Ed25519PublicKey.from_public_bytes(bytes.fromhex(pub_key_hex))
+            unsigned = {k: v for k, v in credential_json.items() if k != "proof"}
+            proof_payload = {
+                "type": proof.get("type"),
+                "created": proof.get("created"),
+                "verificationMethod": proof.get("verificationMethod"),
+                "proofPurpose": proof.get("proofPurpose"),
+                "unsignedCredential": unsigned,
+            }
+            public_key.verify(
+                bytes.fromhex(proof_value_hex),
+                _canonical_json(proof_payload),
+            )
+        except (InvalidSignature, ValueError, Exception) as e:
+            logger.warning("Ed25519 signature verification failed for %s: %s", credential_id, e)
+            return {"valid": False, "reason": f"Ed25519 signature verification failed: {e}", "metadata": {"credentialId": credential_id}}
+    else:
+        logger.warning("No public key found for credential %s, skipping crypto verification", credential_id)
 
     cred_type = credential_json.get("type", [])
     issuer = credential_json.get("issuer")
     subject = credential_json.get("credentialSubject", {}).get("id")
-
     metadata = {
         "credentialId": credential_id,
         "type": cred_type,
@@ -213,7 +280,7 @@ def _verify_credential(credential_json: dict[str, Any]) -> dict[str, Any]:
         "subject": subject,
     }
 
-    logger.info("Verified credential %s valid=%s", credential_id, True)
+    logger.info("Verified credential %s valid=True", credential_id)
     return {"valid": True, "reason": "Proof is valid and credential is active", "metadata": metadata}
 
 
@@ -232,22 +299,25 @@ def _check_revocation_status(credential_id: str) -> dict[str, Any]:
 def _resolve_did(did: str) -> dict[str, Any]:
     record = IN_MEMORY_STORE["dids"].get(did)
     if record:
+        pub_key_bytes = record.get("public_key_bytes")
         logger.info("Resolved DID %s from local store", did)
-        return {
+        doc = {
             "@context": "https://www.w3.org/ns/did/v1",
             "id": did,
-            "verificationMethod": [
-                {
-                    "id": f"{did}#keys-1",
-                    "type": "Ed25519VerificationKey2020",
-                    "controller": did,
-                    "publicKeyMultibase": f"z{did}_pubkey_placeholder",
-                },
-            ],
             "authentication": [f"{did}#keys-1"],
             "assertionMethod": [f"{did}#keys-1"],
             "created": record["created"],
         }
+        if pub_key_bytes:
+            doc["verificationMethod"] = [
+                {
+                    "id": f"{did}#keys-1",
+                    "type": "Ed25519VerificationKey2020",
+                    "controller": did,
+                    "publicKeyMultibase": f"z{pub_key_bytes}",
+                },
+            ]
+        return doc
 
     logger.info("Resolved DID %s as unknown, returning placeholder document", did)
     return {
