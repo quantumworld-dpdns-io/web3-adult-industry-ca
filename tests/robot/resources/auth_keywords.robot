@@ -15,7 +15,7 @@ Get JWT Token
     POST    /api/v1/admin/login    ${body}
     Integer    response status    200
     ${token}=    Output    response body access_token
-    [Return]    ${token}
+    RETURN    ${token}
 
 Set JWT Auth Header
     [Arguments]    ${token}
@@ -24,7 +24,7 @@ Set JWT Auth Header
 
 Get Admin Token
     ${token}=    Get JWT Token    ${ADMIN_USERNAME}    ${ADMIN_PASSWORD}
-    [Return]    ${token}
+    RETURN    ${token}
 
 Verify 401 Without Auth
     [Arguments]    ${endpoint}    ${method}=GET
@@ -68,12 +68,4 @@ Verify Forbidden Access
 
 Get Non Admin Token
     ${token}=    Get JWT Token    regularuser    regularpass1234
-    [Return]    ${token}
-
-Set Auth Header
-    &{headers}=    Create Dictionary    X-API-Key=${API_KEY}    Content-Type=application/json
-    Set Headers    ${headers}
-
-Clear Auth Header
-    &{headers}=    Create Dictionary    Content-Type=application/json
-    Set Headers    ${headers}
+    RETURN    ${token}

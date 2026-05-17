@@ -3,10 +3,13 @@ name = "ca-core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+pqc = []
+
 [dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-thiserror = "1"
+thiserror = "2"
 ed25519-dalek = "2"
 rand = "0.8"
 sha2 = "0.10"
@@ -14,8 +17,6 @@ hex = "0.4"
 base64 = "0.22"
 uuid = { version = "1", features = ["v4"] }
 chrono = { version = "0.4", features = ["serde"] }
-liboqs = { version = "0.10", optional = true }
 
-[features]
-default = []
-pqc = ["liboqs"]
+[dev-dependencies]
+tempfile = "3"

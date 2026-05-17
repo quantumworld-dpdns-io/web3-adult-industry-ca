@@ -104,7 +104,7 @@ Get Dashboard Metrics
 Generate Test Keypair
     ${key}=    Evaluate    __import__('cryptography').hazmat.primitives.asymmetric.ed25519.Ed25519PrivateKey.generate()
     ${pub_key}=    Evaluate    __import__('base64').b64encode(${key}.public_key().public_bytes_raw()).decode()    modules=base64
-    [Return]    ${pub_key}
+    RETURN    ${pub_key}
 
 Send Rapid Requests
     [Arguments]    ${count}    ${url}=/api/v1/dids/create    ${method}=GET
@@ -116,4 +116,4 @@ Generate Large Payload
     [Arguments]    ${size_kb}
     ${large_string}=    Evaluate    "X" * ${size_kb * 1024}
     &{claims}=    Create Dictionary    data=${large_string}
-    [Return]    ${claims}
+    RETURN    ${claims}

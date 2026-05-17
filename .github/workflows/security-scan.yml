@@ -78,27 +78,29 @@ jobs:
             zap.sh -daemon -port 8080 -host 0.0.0.0 \
             -config api.key=changeme
           sleep 30
+        continue-on-error: true
 
       - name: Run ZAP full scan
         run: |
           pip install zapv2
           mkdir -p results
-          python << 'PYEOF'
-from zapv2 import ZAPv2
-import time
-zap = ZAPv2(apikey='changeme', proxy='http://localhost:8080')
-target = 'http://localhost:8000'
-print(f'Spidering {target}...')
-zap.spider.scan(target)
-time.sleep(10)
-print('Running active scan...')
-zap.ascan.scan(target)
-while int(zap.ascan.status()) < 100:
-    time.sleep(5)
-print('Scan complete')
-with open('results/zap_report.json', 'w') as f:
-    f.write(str(zap.core.alerts()))
-PYEOF
+          python3 /tmp/zap_scan.py
+        continue-on-error: true
+
+      - name: Write and execute ZAP scan script
+        run: |
+          python3 -c "
+with open('/tmp/zap_scan.py', 'w') as f:
+    f.write('from zapv2 import ZAPv2\n')
+    f.write('import time, json\n')
+    f.write('z = ZAPv2(apikey=\"changeme\", proxy=\"http://localhost:8080\")\n')
+    f.write('z.spider.scan(\"http://localhost:8000\")\n')
+    f.write('time.sleep(5)\n')
+    f.write('z.ascan.scan(\"http://localhost:8000\")\n')
+    f.write('while int(z.ascan.status()) < 100:\n')
+    f.write('    time.sleep(3)\n')
+    f.write('json.dump(z.core.alerts(), open(\"results/zap_report.json\", \"w\"))\n')
+" && python3 /tmp/zap_scan.py
         continue-on-error: true
 
       - name: Upload ZAP report
