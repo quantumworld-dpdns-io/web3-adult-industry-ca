@@ -1,5 +1,6 @@
 use ed25519_dalek::{Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use rand::rngs::OsRng;
+use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -68,8 +69,9 @@ impl<'de> Deserialize<'de> for Keypair {
 }
 
 pub fn generate_keypair() -> Keypair {
-    let mut csprng = OsRng;
-    let signing_key = SigningKey::generate(&mut csprng);
+    let mut seed = [0u8; 32];
+    OsRng.fill_bytes(&mut seed);
+    let signing_key = SigningKey::from_bytes(&seed);
     let verifying_key = signing_key.verifying_key();
 
     Keypair {
@@ -83,7 +85,8 @@ pub fn sign(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, CryptoError> 
         .try_into()
         .map_err(|_| CryptoError::InvalidKeyLength)?;
     let signing_key =
-        SigningKey::from_key_bytes(&bytes).map_err(|_| CryptoError::KeyGenerationFailed)?;
+        let signing_key = SigningKey::from_bytes(&bytes);
+        signing_key
     let signature = signing_key.sign(message);
     Ok(signature.to_bytes().to_vec())
 }
