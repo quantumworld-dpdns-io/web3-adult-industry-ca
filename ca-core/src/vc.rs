@@ -188,7 +188,7 @@ pub fn verify_credential(
         .decode(&proof.proof_value)
         .map_err(|e| VcError::SerializationError(e.to_string()))?;
 
-    crate::crypto::verify(&hash, &signature, public_key)
+    Ok(crate::crypto::verify(&hash, &signature, public_key)?)
 }
 
 #[cfg(test)]

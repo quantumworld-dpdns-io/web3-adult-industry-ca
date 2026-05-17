@@ -206,13 +206,10 @@ fn cmd_vc_verify(path: &PathBuf) {
         }
     };
 
-    let proof = match &credential.proof {
-        Some(p) => p,
-        None => {
-            eprintln!("Error: Credential has no proof");
-            std::process::exit(1);
-        }
-    };
+    if credential.proof.is_none() {
+        eprintln!("Error: Credential has no proof");
+        std::process::exit(1);
+    }
 
     let did_str = &credential.issuer;
     let did = match did_str.as_str() {

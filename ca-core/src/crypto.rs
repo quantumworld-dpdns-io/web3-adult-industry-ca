@@ -84,9 +84,7 @@ pub fn sign(message: &[u8], private_key: &[u8]) -> Result<Vec<u8>, CryptoError> 
     let bytes: [u8; 32] = private_key
         .try_into()
         .map_err(|_| CryptoError::InvalidKeyLength)?;
-    let signing_key =
-        let signing_key = SigningKey::from_bytes(&bytes);
-        signing_key
+    let signing_key = SigningKey::from_bytes(&bytes);
     let signature = signing_key.sign(message);
     Ok(signature.to_bytes().to_vec())
 }
